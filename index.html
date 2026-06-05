@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Vela Finance Command Center</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  :root {
+    --bg:#0a0a0f; --panel:#12121a; --border:#1e1e2e; --line:#1a1a28;
+    --text:#e0e0e0; --muted:#888; --white:#fff;
+    --indigo:#6366f1; --green:#22c55e; --red:#ef4444; --amber:#f59e0b; --blue:#3b82f6;
+  }
+  body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; background:var(--bg); color:var(--text); min-height:100vh; }
+  .header { padding:20px 32px; display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--border); flex-wrap:wrap; gap:12px; }
+  .header h1 { font-size:22px; font-weight:700; color:var(--white); }
+  .header h1 span { color:var(--indigo); }
+  .header .right { display:flex; align-items:center; gap:14px; }
+  .header .date { color:var(--muted); font-size:13px; }
+  .mode { font-size:12px; padding:4px 10px; border-radius:20px; font-weight:600; }
+  .mode.local { background:rgba(245,166,35,0.15); color:var(--amber); }
+  .mode.live { background:rgba(34,197,94,0.15); color:var(--green); }
+  .btn { background:var(--indigo); color:#fff; border:none; padding:8px 14px; border-radius:8px; font-size:13px; cursor:pointer; font-weight:500; }
+  .btn:hover { background:#5558e6; }
+  .btn-ghost { background:transparent; color:var(--muted); border:1px solid #2a2a3e; padding:7px 14px; border-radius:8px; cursor:pointer; font-size:13px; }
+  .btn-ghost:hover { color:#fff; border-color:var(--indigo); }
+  .btn-sm { padding:5px 11px; font-size:12px; }
+  .btn-danger { background:#dc2626; } .btn-danger:hover { background:#b91c1c; }
+
+  .metrics { display:grid; grid-template-columns:repeat(6,1fr); gap:14px; padding:20px 32px 6px; }
+  .metric-card { background:var(--panel); border:1px solid var(--border); border-radius:12px; padding:16px; }
+  .metric-card.accent { border-color:rgba(99,102,241,0.5); background:linear-gradient(180deg,rgba(99,102,241,0.10),var(--panel)); }
+  .metric-card .label { font-size:11px; color:var(--muted); margin-bottom:6px; text-transform:uppercase; letter-spacing:0.5px; }
+  .metric-card .value { font-size:23px; font-weight:700; color:var(--white); line-height:1.1; }
+  .metric-card .sub { font-size:12px; margin-top:5px; color:var(--muted); }
+  .metric-card .sub.up { color:var(--green); } .metric-card .sub.down { color:var(--red); } .metric-card .sub.warn { color:var(--amber); }
+
+  .section-title { padding:14px 32px 0; font-size:13px; text-transform:uppercase; letter-spacing:1px; color:#6b6b80; }
+  .grid { display:grid; gap:14px; padding:12px 32px; }
+  .g2 { grid-template-columns:1fr 1fr; } .g3 { grid-template-columns:1fr 1fr 1fr; }
+  .card { background:var(--panel); border:1px solid var(--border); border-radius:12px; padding:18px; }
+  .card h2 { font-size:15px; font-weight:600; margin-bottom:14px; color:var(--white); display:flex; justify-content:space-between; align-items:center; gap:8px; }
+  .card h2 .hint { font-size:11px; color:var(--muted); font-weight:400; text-transform:none; letter-spacing:0; }
+  canvas { max-height:260px; }
+  .full { grid-column:1/-1; }
+
+  table { width:100%; border-collapse:collapse; }
+  th { text-align:left; padding:9px 10px; font-size:11px; text-transform:uppercase; letter-spacing:0.5px; color:var(--muted); border-bottom:1px solid var(--border); }
+  td { padding:9px 10px; border-bottom:1px solid var(--line); font-size:13px; }
+  td.num, th.num { text-align:right; font-variant-numeric:tabular-nums; }
+  tr:hover td { background:#1a1a28; }
+  .tag { display:inline-block; padding:2px 9px; border-radius:20px; font-size:11px; font-weight:500; }
+  .tag.active { background:rgba(34,197,94,0.15); color:var(--green); }
+  .tag.churned { background:rgba(239,68,68,0.15); color:var(--red); }
+  .tag.trial { background:rgba(234,179,8,0.15); color:#eab308; }
+  .tag.recurring { background:rgba(99,102,241,0.18); color:#a5b4fc; }
+  .tag.services { background:rgba(59,130,246,0.15); color:#93c5fd; }
+  .tiny { color:var(--muted); font-size:11px; }
+  .field { display:flex; flex-direction:column; gap:4px; }
+  .field label { font-size:11px; color:var(--muted); }
+  .row-inline { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  input, select { background:#0a0a0f; border:1px solid #2a2a3e; border-radius:8px; color:#fff; padding:8px 10px; font-size:13px; outline:none; }
+  input:focus, select:focus { border-color:var(--indigo); }
+  input.cell { width:100%; background:transparent; border:1px solid transparent; padding:5px 7px; }
+  input.cell:hover { border-color:#2a2a3e; } input.cell:focus { border-color:var(--indigo); background:#0a0a0f; }
+  input.w90 { width:90px; } input.w120 { width:120px; }
+
+  .runway-row { display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px solid var(--line); font-size:14px; }
+  .runway-row:last-child { border-bottom:none; }
+  .runway-row .lbl { color:#cfcfe0; } .runway-row .lbl small { color:var(--muted); display:block; font-size:11px; }
+  .runway-row .v { font-weight:700; font-variant-numeric:tabular-nums; }
+  .v.good { color:var(--green); } .v.warn { color:var(--amber); } .v.danger { color:var(--red); }
+
+  .verdict { padding:16px; border-radius:12px; text-align:center; margin-bottom:14px; }
+  .verdict.alive { background:rgba(34,197,94,0.10); border:1px solid rgba(34,197,94,0.35); }
+  .verdict .big { font-size:20px; font-weight:700; color:var(--green); }
+  .verdict .small { font-size:12px; color:var(--muted); margin-top:4px; }
+
+  .modal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.75); z-index:100; justify-content:center; align-items:center; padding:20px; }
+  .modal-overlay.show { display:flex; }
+  .modal { background:var(--panel); border:1px solid var(--border); border-radius:16px; padding:22px; width:520px; max-width:100%; max-height:90vh; overflow:auto; }
+  .modal h3 { margin-bottom:14px; color:#fff; }
+  .modal pre { background:#0a0a0f; border:1px solid #2a2a3e; border-radius:8px; padding:14px; font-size:12px; white-space:pre-wrap; color:#cfcfe0; line-height:1.5; }
+  .form-group { margin-bottom:12px; } .form-group label { display:block; font-size:12px; color:var(--muted); margin-bottom:4px; }
+  .form-group input, .form-group select { width:100%; }
+  .modal-actions { display:flex; gap:10px; justify-content:flex-end; margin-top:16px; }
+  .footnote { padding:18px 32px 40px; color:#5a5a70; font-size:12px; line-height:1.6; }
+  .toast { position:fixed; bottom:24px; right:24px; background:#1e1e2e; border:1px solid #333; color:var(--green); padding:12px 18px; border-radius:8px; font-size:13px; opacity:0; transition:opacity .3s; pointer-events:none; z-index:200; }
+  .toast.show { opacity:1; }
+  @media(max-width:1100px){ .metrics{grid-template-columns:repeat(3,1fr);} .g2,.g3{grid-template-columns:1fr;} }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1><span>Vela</span> Finance Command Center</h1>
+  <div class="right">
+    <span class="mode local" id="modeBadge">● Local mode</span>
+    <span class="date" id="currentDate"></span>
+    <button class="btn-ghost" onclick="refreshLive()">↻ Sync live</button>
+    <button class="btn-ghost" onclick="openSlack()">Slack digest</button>
+    <button class="btn-ghost" onclick="exportJSON()">Export</button>
+  </div>
+</div>
+
+<div class="metrics" id="metrics"></div>
+
+<!-- ── REVENUE (top priority) ───────────────────────────────────────────── -->
+<div class="section-title">Revenue</div>
+<div class="grid">
+  <div class="card full">
+    <h2>Customers <span class="hint" style="margin-left:auto"></span>
+      <button class="btn btn-sm" onclick="addCustomer()">+ Add customer</button>
+    </h2>
+    <table>
+      <thead><tr><th>Customer</th><th>Type</th><th class="num">MRR / mo</th><th>Start</th><th>Renewal</th><th>Status</th><th></th></tr></thead>
+      <tbody id="customerTable"></tbody>
+    </table>
+  </div>
+</div>
+<div class="grid g3">
+  <div class="card">
+    <h2>MRR projection <span class="hint">monthly growth scenarios</span></h2>
+    <div class="row-inline" style="margin-bottom:12px">
+      <div class="field"><label>Conservative %/mo</label><input id="gCon" type="number" value="3" class="w90" oninput="renderRevProjection()"></div>
+      <div class="field"><label>Base %/mo</label><input id="gBase" type="number" value="8" class="w90" oninput="renderRevProjection()"></div>
+      <div class="field"><label>Optimistic %/mo</label><input id="gOpt" type="number" value="15" class="w90" oninput="renderRevProjection()"></div>
+    </div>
+    <canvas id="revProjChart"></canvas>
+  </div>
+  <div class="card">
+    <h2>Revenue trend <span class="hint">MRR by month</span></h2>
+    <canvas id="mrrTrendChart"></canvas>
+  </div>
+  <div class="card">
+    <h2>Upcoming renewals</h2>
+    <div id="renewals"></div>
+  </div>
+</div>
+
+<!-- ── CASH & RUNWAY ────────────────────────────────────────────────────── -->
+<div class="section-title">Cash &amp; Runway</div>
+<div class="grid g3">
+  <div class="card">
+    <h2>Runway</h2>
+    <div id="verdict"></div>
+    <div id="runwayScenarios"></div>
+  </div>
+  <div class="card">
+    <h2>Cash-flow forecast <span class="hint">projected balance</span></h2>
+    <canvas id="forecastChart"></canvas>
+  </div>
+  <div class="card">
+    <h2>Inputs &amp; cash accounts</h2>
+    <div class="field" style="margin-bottom:10px"><label>Operating cash — Mercury ($) <span class="tiny" id="cashSrc"></span></label><input id="cashInput" type="number" style="width:100%" oninput="setCash(this.value)"></div>
+    <div id="cashAccounts" style="margin-bottom:10px"></div>
+    <button class="btn btn-sm" style="margin-bottom:14px" onclick="addCashAccount()">+ Cash account</button>
+    <div class="field" style="margin-bottom:12px"><label>Forecast horizon (months)</label><input id="horizonInput" type="number" min="1" max="60" value="24" style="width:100%" oninput="setHorizon(this.value)"></div>
+    <div class="field" style="margin-bottom:12px"><label>Revenue growth (% / month)</label><input id="revGrowth" type="number" value="0" step="1" style="width:100%" oninput="renderForecast()"></div>
+    <div class="field"><label>Cost growth (% / month)</label><input id="costGrowth" type="number" value="0" step="1" style="width:100%" oninput="renderForecast()"></div>
+  </div>
+</div>
+
+<!-- ── SPEND & BURN ─────────────────────────────────────────────────────── -->
+<div class="section-title">Spend &amp; Burn</div>
+<div class="grid g2">
+  <div class="card">
+    <h2>Spend by category</h2>
+    <canvas id="spendChart"></canvas>
+  </div>
+  <div class="card">
+    <h2>Burn summary <span class="hint" id="actualHint"></span></h2>
+    <div id="burnSummary"></div>
+  </div>
+</div>
+<div class="grid g2">
+  <div class="card">
+    <h2>Team / payroll <button class="btn btn-sm" onclick="addTeam()">+ Add</button></h2>
+    <table><thead><tr><th>Name</th><th>Role</th><th class="num">$/mo</th><th></th></tr></thead><tbody id="teamTable"></tbody></table>
+  </div>
+  <div class="card">
+    <h2>Fixed &amp; variable costs <button class="btn btn-sm" onclick="addCost()">+ Add</button></h2>
+    <table><thead><tr><th>Cost</th><th>Bucket</th><th class="num">$/mo</th><th></th></tr></thead><tbody id="costTable"></tbody></table>
+  </div>
+</div>
+
+<!-- ── SCENARIO PLANNER (concentration/churn lives here, opt-in) ─────────── -->
+<div class="section-title">Scenario planner</div>
+<div class="grid g2">
+  <div class="card">
+    <h2>What-if</h2>
+    <div class="row-inline" style="margin-bottom:14px">
+      <div class="field"><label>+ New monthly revenue ($)</label><input id="whatRev" type="number" value="0" class="w120" oninput="renderScenario()"></div>
+      <div class="field"><label>+ New monthly cost ($)</label><input id="whatCost" type="number" value="0" class="w120" oninput="renderScenario()"></div>
+      <div class="field"><label>Churn a top customer?</label><select id="whatChurn" onchange="renderScenario()"><option value="0">No</option><option value="1">Lose #1</option><option value="2">Lose top 2</option></select></div>
+    </div>
+    <div id="scenarioOut"></div>
+  </div>
+  <div class="card">
+    <h2>Efficiency</h2>
+    <div id="efficiency"></div>
+  </div>
+</div>
+
+<div class="footnote" id="footnote"></div>
+
+<!-- Customer modal -->
+<div class="modal-overlay" id="custModal">
+  <div class="modal">
+    <h3 id="custModalTitle">Add customer</h3>
+    <div class="form-group"><label>Name</label><input id="cName"></div>
+    <div class="form-group"><label>Type</label><select id="cType"><option value="recurring">Recurring (subscription → counts to ARR)</option><option value="services">Services / retainer (excluded from ARR)</option></select></div>
+    <div class="form-group"><label>Monthly amount ($)</label><input id="cMrr" type="number"></div>
+    <div class="form-group"><label>Start date</label><input id="cDate" type="date"></div>
+    <div class="form-group"><label>Renewal date (optional)</label><input id="cRenew" type="date"></div>
+    <div class="form-group"><label>Status</label><select id="cStatus"><option value="active">Active</option><option value="trial">Trial</option><option value="churned">Churned</option></select></div>
+    <div class="modal-actions"><button class="btn-ghost" onclick="closeModal('custModal')">Cancel</button><button class="btn" onclick="saveCustomer()">Save</button></div>
+  </div>
+</div>
+
+<!-- Slack modal -->
+<div class="modal-overlay" id="slackModal">
+  <div class="modal">
+    <h3>Daily finance digest</h3>
+    <pre id="slackText"></pre>
+    <div class="modal-actions">
+      <button class="btn-ghost" onclick="closeModal('slackModal')">Close</button>
+      <button class="btn-ghost" onclick="copySlack()">Copy</button>
+      <button class="btn" onclick="postSlack()">Post to Slack</button>
+    </div>
+    <div class="tiny" style="margin-top:8px">“Post to Slack” works when the backend is deployed with a SLACK_WEBHOOK_URL.</div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ─────────────────────────────────────────────────────────────────────────
+//  Vela Finance Command Center — single source of truth for cash, revenue, burn.
+//  Standalone (localStorage) and auto-upgrades to LIVE when the backend
+//  (finance-server.js / Supabase Edge Function) is reachable: Mercury cash + Stripe revenue.
+// ─────────────────────────────────────────────────────────────────────────
+const STORAGE_KEY = 'vela_finance_v3';
+// This page is hosted on Supabase Storage (renders as real HTML); the API lives in the
+// edge function on the same host. Password (if set) is read from this page's ?pw= and
+// forwarded to the gated API. Same-origin, so no CORS issues.
+const API_BASE = 'https://ncvcdvkfvgrwugkydytd.supabase.co/functions/v1/finance';
+const PW = new URLSearchParams(location.search).get('pw') || '';
+function api(path){ return API_BASE + path + (PW ? ((path.includes('?')?'&':'?') + 'pw=' + encodeURIComponent(PW)) : ''); }
+
+// Seeded from your real Mar–Jun 2026 numbers. All customers are RECURRING.
+// cash = operating cash (Mercury, overridden live). cashAccounts = other balances
+// (Palus treasury earning APY) added on top, with interest counted as income.
+const SEED = { cash:0, cashAccounts:[], customers:[], team:[], costs:[], horizon:24 };
+
+let data, live = { mode:'local', cash:null, customers:null, actualBurn:null, asOf:null };
+let editIdx = null;
+
+function load(){ try{ const s=localStorage.getItem(STORAGE_KEY); if(s){ data=JSON.parse(s); } else { data=JSON.parse(JSON.stringify(SEED)); } }catch(e){ data=JSON.parse(JSON.stringify(SEED)); } accrueTreasury(); }
+// Auto-accrue: roll each interest-bearing account forward from its asOf date to today at APY.
+function accrueTreasury(){
+  const today=new Date().toISOString().slice(0,10);
+  (data.cashAccounts||[]).forEach(a=>{
+    if(!a.asOf){ a.asOf=today; return; }
+    const days=(new Date(today)-new Date(a.asOf))/864e5;
+    if(days>0 && a.apy){ a.balance=Math.round((+a.balance||0)*Math.pow(1+(+a.apy/100),days/365)*100)/100; a.asOf=today; }
+  });
+  save();
+}
+function save(){ localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); pushRemote(); }
+// Shared state: debounced write of the whole document to the Supabase-backed store.
+let _pushTimer;
+function pushRemote(){ clearTimeout(_pushTimer); _pushTimer=setTimeout(()=>{
+  fetch(api('/api/save'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).catch(()=>{}); },1000); }
+async function loadRemote(){
+  try{ const r=await fetch(api('/api/data'),{cache:'no-store'}); if(!r.ok) return false;
+    const j=await r.json();
+    if(j&&j.state){ data=j.state; accrueTreasury(); return true; }   // adopt shared state
+    pushRemote(); return false;                                      // empty store -> seed it
+  }catch(e){ return false; }
+}
+function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
+function $(id){ return document.getElementById(id); }
+function fmt(n){ const v=Math.round(n); return (v<0?'-$':'$')+Math.abs(v).toLocaleString('en-US'); }
+function fmtK(n){ const a=Math.abs(n); if(a>=1e6) return (n<0?'-$':'$')+(a/1e6).toFixed(2)+'M'; if(a>=1e3) return (n<0?'-$':'$')+(a/1e3).toFixed(1)+'k'; return fmt(n); }
+function months(m){ return m===Infinity?'∞':m>=600?'600+':m.toFixed(1); }
+function toast(m){ const t=$('toast'); t.textContent=m; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2000); }
+
+// ── Core finance math ──────────────────────────────────────────────────────
+function metrics(){
+  const cust=(live.customers||data.customers);
+  const active=cust.filter(c=>c.status==='active');
+  const recurring=active.filter(c=>c.type!=='services').reduce((s,c)=>s+(+c.mrr||0),0);
+  const services=active.filter(c=>c.type==='services').reduce((s,c)=>s+(+c.mrr||0),0);
+  const totalRev=recurring+services, arr=recurring*12;
+  const team=data.team.reduce((s,t)=>s+(+t.monthly||0),0);
+  const fixed=data.costs.filter(c=>c.bucket==='fixed').reduce((s,c)=>s+(+c.monthly||0),0);
+  const variable=data.costs.filter(c=>c.bucket!=='fixed').reduce((s,c)=>s+(+c.monthly||0),0);
+  const grossCosts=team+fixed+variable, operatingBurn=grossCosts-totalRev;
+  const opCash=live.cash!=null?live.cash:(+data.cash||0);
+  const accts=data.cashAccounts||[];
+  const treasury=accts.reduce((s,a)=>s+(+a.balance||0),0);
+  const monthlyInterest=accts.reduce((s,a)=>s+(+a.balance||0)*((+a.apy||0)/100)/12,0);
+  const cash=opCash+treasury;
+  const netBurn=operatingBurn-monthlyInterest;          // net monthly cash change (incl. treasury interest)
+  const runwayAt=rev=>{ const nb=grossCosts-rev-monthlyInterest; return nb<=0?Infinity:cash/nb; };
+  const ranked=active.slice().sort((a,b)=>(+b.mrr)-(+a.mrr));
+  const top1=ranked[0]?+ranked[0].mrr:0, top2=top1+(ranked[1]?+ranked[1].mrr:0);
+  const vals=active.map(c=>+c.mrr).sort((a,b)=>a-b);
+  return { cash,opCash,treasury,monthlyInterest,operatingBurn,recurring,services,totalRev,arr,team,fixed,variable,grossCosts,netBurn,activeCount:active.length,ranked,
+    runway:{ asis:runwayAt(totalRev), loseTop1:runwayAt(totalRev-top1), loseTop2:runwayAt(totalRev-top2), floor:runwayAt(0) },
+    conc:{ top1Pct:totalRev?top1/totalRev*100:0, top1Name:ranked[0]?ranked[0].name:'—' },
+    arpaMean:active.length?totalRev/active.length:0, arpaMedian:vals.length?vals[Math.floor(vals.length/2)]:0,
+    grossMargin:totalRev?(totalRev-variable)/totalRev*100:0 };
+}
+function runwayClass(m){ return m===Infinity?'good':m<6?'danger':m<18?'warn':'good'; }
+
+// ── Metric cards (revenue-led) ──────────────────────────────────────────────
+function renderMetrics(){
+  const m=metrics();
+  $('metrics').innerHTML=`
+    <div class="metric-card accent"><div class="label">MRR</div><div class="value">${fmtK(m.totalRev)}</div><div class="sub">${m.activeCount} active customers</div></div>
+    <div class="metric-card accent"><div class="label">ARR</div><div class="value">${fmtK(m.arr)}</div><div class="sub">recurring × 12</div></div>
+    <div class="metric-card"><div class="label">Cash on hand</div><div class="value">${fmtK(m.cash)}</div><div class="sub">${live.mode==='live'?'Mercury':'op'} ${fmtK(m.opCash)} + treasury ${fmtK(m.treasury)}</div></div>
+    <div class="metric-card"><div class="label">Net burn / mo</div><div class="value">${fmt(m.netBurn)}</div><div class="sub ${m.netBurn<=0?'up':'warn'}">${m.netBurn<=0?'cash-positive':'burning'} · ${fmt(m.monthlyInterest)}/mo interest</div></div>
+    <div class="metric-card"><div class="label">Runway</div><div class="value">${months(m.runway.asis)} mo</div><div class="sub warn">floor ${months(m.runway.floor)} mo</div></div>
+    <div class="metric-card"><div class="label">Avg / customer</div><div class="value">${fmtK(m.arpaMean)}</div><div class="sub">median ${fmt(m.arpaMedian)}</div></div>`;
+}
+
+// ── Revenue: customers, projection, trend, renewals ─────────────────────────
+function buildMrrHistory(){
+  const cust=(live.customers||data.customers); const out=[]; const now=new Date();
+  for(let i=5;i>=0;i--){ const m=new Date(now.getFullYear(),now.getMonth()-i,1); const end=new Date(m.getFullYear(),m.getMonth()+1,0);
+    const mrr=cust.filter(c=>(c.status==='active')&&new Date(c.date)<=end).reduce((s,c)=>s+(+c.mrr||0),0);
+    out.push({label:m.toLocaleDateString('en-US',{month:'short',year:'2-digit'}),mrr}); }
+  return out;
+}
+function renderRevProjection(){
+  const m=metrics(); const base=(+$('gBase').value||0)/100, opt=(+$('gOpt').value||0)/100, con=(+$('gCon').value||0)/100;
+  const labels=[],b=[],o=[],c=[]; const now=new Date();
+  for(let i=0;i<=12;i++){ const d=new Date(now.getFullYear(),now.getMonth()+i,1); labels.push(i===0?'Now':d.toLocaleDateString('en-US',{month:'short',year:'2-digit'}));
+    b.push(Math.round(m.totalRev*Math.pow(1+base,i))); o.push(Math.round(m.totalRev*Math.pow(1+opt,i))); c.push(Math.round(m.totalRev*Math.pow(1+con,i))); }
+  if(!window.Chart)return; destroy('revProjChart');
+  CH['revProjChart']=new Chart($('revProjChart'),{type:'line',data:{labels,datasets:[
+    {label:`Optimistic (${(opt*100).toFixed(0)}%)`,data:o,borderColor:'#22c55e',borderDash:[5,5],tension:.3,pointRadius:0},
+    {label:`Base (${(base*100).toFixed(0)}%)`,data:b,borderColor:'#6366f1',tension:.3,pointRadius:0},
+    {label:`Conservative (${(con*100).toFixed(0)}%)`,data:c,borderColor:'#f59e0b',borderDash:[5,5],tension:.3,pointRadius:0}]},
+    options:{responsive:true,plugins:{legend:{display:true,labels:{color:textc,boxWidth:12,font:{size:10}}}},scales:{x:{grid:{color:gridc},ticks:{color:textc,maxTicksLimit:7}},y:{grid:{color:gridc},ticks:{color:textc,callback:v=>'$'+(v/1000)+'k'}}}}});
+}
+function renderRevenue(){
+  const h=buildMrrHistory(); drawLine('mrrTrendChart',h.map(x=>x.label),h.map(x=>x.mrr));
+  renderRevProjection();
+  const cust=(live.customers||data.customers).filter(c=>c.status==='active'&&c.renew).sort((a,b)=>new Date(a.renew)-new Date(b.renew));
+  $('renewals').innerHTML=cust.length?cust.slice(0,7).map(c=>`<div class="runway-row"><div class="lbl">${esc(c.name)}<small>${esc(c.renew)}</small></div><div class="v">${fmtK(+c.mrr)}</div></div>`).join('')
+    :`<div class="tiny">No renewal dates set. Add them on your larger contracts to track when revenue is up for renewal.</div>`;
+  const cs=(live.customers||data.customers);
+  $('customerTable').innerHTML=cs.map((c,i)=>`
+    <tr><td style="font-weight:500;color:#fff">${esc(c.name)}</td>
+    <td><span class="tag ${c.type==='services'?'services':'recurring'}" style="cursor:pointer" onclick="toggleType(${i})">${c.type==='services'?'Services':'Recurring'}</span></td>
+    <td class="num" style="font-weight:600;color:#fff">${fmt(+c.mrr)}</td>
+    <td class="tiny">${esc(c.date||'')}</td><td class="tiny">${esc(c.renew||'—')}</td>
+    <td><span class="tag ${c.status}">${c.status[0].toUpperCase()+c.status.slice(1)}</span></td>
+    <td class="num"><button class="btn btn-sm" onclick="editCustomer(${i})">Edit</button> <button class="btn btn-sm btn-danger" onclick="delCustomer(${i})">×</button></td></tr>`).join('');
+}
+
+// ── Cash & runway ───────────────────────────────────────────────────────────
+function renderRunway(){
+  const m=metrics();
+  $('verdict').innerHTML=`<div class="verdict alive"><div class="big">${months(m.runway.asis)} months</div><div class="small">${m.netBurn<=0?'Profitable at current revenue':'Burning '+fmt(m.netBurn)+'/mo'} · floor ${months(m.runway.floor)} mo</div></div>`;
+  $('runwayScenarios').innerHTML=[
+    ['Runway (current revenue)',m.runway.asis,'cash ÷ net burn'],
+    ['Floor (revenue → $0)',m.runway.floor,'cash ÷ gross costs'],
+  ].map(([l,v,s])=>`<div class="runway-row"><div class="lbl">${l}<small>${s}</small></div><div class="v ${runwayClass(v)}">${months(v)} mo</div></div>`).join('');
+}
+function renderForecast(){
+  const m=metrics(); const horizon=+data.horizon||24; const rg=(+$('revGrowth').value||0)/100, cg=(+$('costGrowth').value||0)/100;
+  const tRate=m.treasury>0?m.monthlyInterest/m.treasury:0;   // blended monthly treasury rate (compounds)
+  const labels=[],bal=[]; let op=m.opCash, tre=m.treasury, rev=m.totalRev, cost=m.grossCosts; const now=new Date();
+  for(let i=0;i<=horizon;i++){ const d=new Date(now.getFullYear(),now.getMonth()+i,1); labels.push(d.toLocaleDateString('en-US',{month:'short',year:'2-digit'}));
+    bal.push(Math.round(op+tre)); op+=(rev-cost); tre*=(1+tRate); rev*=(1+rg); cost*=(1+cg); }
+  drawLine('forecastChart',labels,bal);
+}
+
+// ── Spend / burn ──────────────────────────────────────────────────────────
+function sumCost(name){ return data.costs.filter(c=>c.name===name).reduce((s,c)=>s+(+c.monthly||0),0); }
+function renderSpend(){
+  const m=metrics();
+  drawDoughnut('spendChart',['Payroll','Rent','Food','Software/SaaS','Payroll tax','Infra/LLM'],
+    [m.team,sumCost('Rent (Home/Office)'),sumCost('Food'),sumCost('Software / SaaS'),sumCost('Employer payroll tax'),m.variable],
+    ['#6366f1','#3b82f6','#22c55e','#f59e0b','#a855f7','#ef4444']);
+  let actual='';
+  if(live.mode==='live'&&live.actualBurn!=null){ const variance=live.actualBurn-m.grossCosts;
+    actual=`<div class="runway-row"><div class="lbl">Actual spend (last 30d)<small>Mercury, excl. ${fmtK(live.actualExcluded||0)} self-transfers</small></div><div class="v">${fmt(live.actualBurn)}</div></div>
+      <div class="runway-row"><div class="lbl">Plan vs actual variance</div><div class="v ${variance>0?'danger':'good'}">${variance>0?'+':''}${fmt(variance)}</div></div>`;
+    if(Array.isArray(live.vendors)&&live.vendors.length){ actual+=`<div class="tiny" style="margin-top:8px">Top real outflows (30d): `+live.vendors.map(v=>`${esc(v.name)} ${fmtK(v.amount)}`).join(' · ')+`</div>`; } }
+  $('burnSummary').innerHTML=`
+    <div class="runway-row"><div class="lbl">Gross monthly costs<small>before revenue</small></div><div class="v">${fmt(m.grossCosts)}</div></div>
+    <div class="runway-row"><div class="lbl">— Payroll (${data.team.length})</div><div class="v">${fmt(m.team)}</div></div>
+    <div class="runway-row"><div class="lbl">— Fixed</div><div class="v">${fmt(m.fixed)}</div></div>
+    <div class="runway-row"><div class="lbl">— Variable / infra</div><div class="v">${fmt(m.variable)}</div></div>
+    <div class="runway-row"><div class="lbl">Revenue offset</div><div class="v good">-${fmt(m.totalRev)}</div></div>
+    <div class="runway-row"><div class="lbl">Operating net burn</div><div class="v ${m.operatingBurn<=0?'good':'warn'}">${fmt(m.operatingBurn)}</div></div>
+    <div class="runway-row"><div class="lbl">Treasury interest income<small>${fmtK(m.treasury)} @ 5% APY</small></div><div class="v good">-${fmt(m.monthlyInterest)}</div></div>
+    <div class="runway-row"><div class="lbl"><b>Net cash change / mo</b></div><div class="v ${m.netBurn<=0?'good':'warn'}">${fmt(m.netBurn)}</div></div>${actual}`;
+  $('teamTable').innerHTML=data.team.map((t,i)=>`
+    <tr><td><input class="cell" value="${esc(t.name)}" oninput="data.team[${i}].name=this.value;save()"></td>
+    <td><input class="cell" value="${esc(t.role||'')}" oninput="data.team[${i}].role=this.value;save()"></td>
+    <td class="num"><input class="cell num" type="number" step="0.01" value="${t.monthly}" oninput="data.team[${i}].monthly=+this.value;renderAll()"></td>
+    <td><button class="btn btn-sm btn-danger" onclick="data.team.splice(${i},1);renderAll()">×</button></td></tr>`).join('');
+  $('costTable').innerHTML=data.costs.map((c,i)=>`
+    <tr><td><input class="cell" value="${esc(c.name)}" oninput="data.costs[${i}].name=this.value;save()"></td>
+    <td><select onchange="data.costs[${i}].bucket=this.value;renderAll()"><option value="fixed" ${c.bucket==='fixed'?'selected':''}>Fixed</option><option value="variable" ${c.bucket!=='fixed'?'selected':''}>Variable</option></select></td>
+    <td class="num"><input class="cell num" type="number" step="0.01" value="${c.monthly}" oninput="data.costs[${i}].monthly=+this.value;renderAll()"></td>
+    <td><button class="btn btn-sm btn-danger" onclick="data.costs.splice(${i},1);renderAll()">×</button></td></tr>`).join('');
+}
+
+// ── Scenario + efficiency ───────────────────────────────────────────────────
+function renderScenario(){
+  const m=metrics(); const addRev=+$('whatRev').value||0, addCost=+$('whatCost').value||0, churn=+$('whatChurn').value||0;
+  let rev=m.totalRev+addRev, cost=m.grossCosts+addCost;
+  if(churn>=1&&m.ranked[0]) rev-=+m.ranked[0].mrr; if(churn>=2&&m.ranked[1]) rev-=+m.ranked[1].mrr;
+  const nb=cost-rev, rw=nb<=0?Infinity:m.cash/nb, delta=rw-m.runway.asis;
+  $('scenarioOut').innerHTML=`
+    <div class="runway-row"><div class="lbl">New net burn / mo</div><div class="v ${nb<=0?'good':'warn'}">${fmt(nb)}</div></div>
+    <div class="runway-row"><div class="lbl">New runway</div><div class="v ${runwayClass(rw)}">${months(rw)} mo</div></div>
+    <div class="runway-row"><div class="lbl">Change vs today</div><div class="v ${delta>=0?'good':'danger'}">${delta>=0?'+':''}${delta===Infinity?'∞':delta.toFixed(1)} mo</div></div>`;
+}
+function renderEfficiency(){
+  const m=metrics();
+  $('efficiency').innerHTML=`
+    <div class="runway-row"><div class="lbl">ARR (recurring)</div><div class="v">${fmtK(m.arr)}</div></div>
+    <div class="runway-row"><div class="lbl">Avg revenue / customer</div><div class="v">${fmt(m.arpaMean)} <span class="tiny">(median ${fmt(m.arpaMedian)})</span></div></div>
+    <div class="runway-row"><div class="lbl">Gross margin<small>rev − infra/variable</small></div><div class="v">${m.grossMargin.toFixed(0)}%</div></div>
+    <div class="runway-row"><div class="lbl">Monthly cost / head</div><div class="v">${fmt(data.team.length?m.team/data.team.length:0)}</div></div>`;
+}
+
+// ── Charts ──────────────────────────────────────────────────────────────────
+const CH={}; const gridc='#1e1e2e', textc='#888';
+function destroy(id){ if(CH[id]) CH[id].destroy(); }
+function drawLine(id,labels,d){ if(!window.Chart)return; destroy(id);
+  CH[id]=new Chart($(id),{type:'line',data:{labels,datasets:[{data:d,borderColor:'#6366f1',backgroundColor:'rgba(99,102,241,0.1)',fill:true,tension:.3,pointRadius:0}]},
+    options:{responsive:true,plugins:{legend:{display:false}},scales:{x:{grid:{color:gridc},ticks:{color:textc,maxTicksLimit:12}},y:{grid:{color:gridc},ticks:{color:textc,callback:v=>'$'+(v/1000)+'k'}}}}}); }
+function drawBar(id,labels,d,colors){ if(!window.Chart)return; destroy(id);
+  CH[id]=new Chart($(id),{type:'bar',data:{labels,datasets:[{data:d,backgroundColor:colors,borderRadius:6}]},
+    options:{responsive:true,plugins:{legend:{display:false}},scales:{x:{grid:{display:false},ticks:{color:textc}},y:{grid:{color:gridc},ticks:{color:textc}}}}}); }
+function drawDoughnut(id,labels,d,colors){ if(!window.Chart)return; destroy(id);
+  CH[id]=new Chart($(id),{type:'doughnut',data:{labels,datasets:[{data:d,backgroundColor:colors,borderWidth:0}]},
+    options:{responsive:true,plugins:{legend:{position:'bottom',labels:{color:textc,padding:12,boxWidth:12,font:{size:11}}}}}}); }
+
+// ── Customer CRUD ────────────────────────────────────────────────────────────
+function addCustomer(){ editIdx=null; $('custModalTitle').textContent='Add customer'; ['cName','cMrr','cRenew'].forEach(id=>$(id).value=''); $('cType').value='recurring'; $('cDate').value=new Date().toISOString().split('T')[0]; $('cStatus').value='active'; openModal('custModal'); }
+function editCustomer(i){ const c=data.customers[i]; editIdx=i; $('custModalTitle').textContent='Edit customer'; $('cName').value=c.name; $('cType').value=c.type||'recurring'; $('cMrr').value=c.mrr; $('cDate').value=c.date||''; $('cRenew').value=c.renew||''; $('cStatus').value=c.status; openModal('custModal'); }
+function saveCustomer(){ const c={name:$('cName').value.trim(),type:$('cType').value,mrr:+$('cMrr').value||0,date:$('cDate').value,renew:$('cRenew').value,status:$('cStatus').value}; if(!c.name)return; if(editIdx!=null) data.customers[editIdx]=c; else data.customers.push(c); save(); closeModal('custModal'); renderAll(); }
+function delCustomer(i){ data.customers.splice(i,1); save(); renderAll(); }
+function toggleType(i){ const c=data.customers[i]; c.type=c.type==='services'?'recurring':'services'; save(); renderAll(); }
+function addTeam(){ data.team.push({name:'New hire',role:'',monthly:0}); save(); renderAll(); }
+function addCost(){ data.costs.push({name:'New cost',bucket:'fixed',monthly:0}); save(); renderAll(); }
+function renderCashAccounts(){
+  data.cashAccounts=data.cashAccounts||[];
+  $('cashAccounts').innerHTML=data.cashAccounts.map((a,i)=>`
+    <div class="row-inline" style="margin-bottom:2px">
+      <input class="cell" style="flex:1;min-width:110px" value="${esc(a.name)}" oninput="data.cashAccounts[${i}].name=this.value;save()">
+      <input class="cell num w120" type="number" value="${a.balance}" title="balance" onchange="data.cashAccounts[${i}].asOf=new Date().toISOString().slice(0,10)" oninput="data.cashAccounts[${i}].balance=+this.value;renderAll()">
+      <input class="cell num w90" type="number" step="0.1" value="${a.apy}" title="APY %" oninput="data.cashAccounts[${i}].apy=+this.value;renderAll()"><span class="tiny">% APY</span>
+      <button class="btn btn-sm btn-danger" onclick="data.cashAccounts.splice(${i},1);renderAll()">×</button>
+    </div>
+    <div class="tiny" style="margin-bottom:8px">↑ auto-accrues at ${a.apy}% APY · as of ${esc(a.asOf||'today')} · +${fmt((+a.balance||0)*((+a.apy||0)/100)/12)}/mo interest</div>`).join('');
+}
+function addCashAccount(){ (data.cashAccounts=data.cashAccounts||[]).push({name:'New account',balance:0,apy:0}); save(); renderAll(); }
+function setCash(v){ data.cash=+v||0; save(); renderAll(); }
+function setHorizon(v){ data.horizon=+v||24; save(); renderForecast(); }
+
+// ── Live backend (Mercury + Stripe) — relative paths work for Node & Supabase ─
+async function refreshLive(){
+  try{
+    const h=await fetch(api('/api/health'),{cache:'no-store'}); if(!h.ok) throw 0;
+    await loadRemote();   // pull teammates' latest shared edits
+    const j=await fetch(api('/api/summary'),{cache:'no-store'}).then(r=>r.json());
+    live.mode='live';
+    if(j.cash!=null) live.cash=j.cash;
+    if(j.actualBurn!=null) live.actualBurn=j.actualBurn;
+    live.actualExcluded=j.actualExcluded??null; live.vendors=j.vendors??null;
+    if(Array.isArray(j.customers)&&j.customers.length) live.customers=j.customers;
+    live.asOf=j.asOf||null;
+    $('modeBadge').className='mode live'; $('modeBadge').textContent='● Live · '+(j.source||'Mercury/Stripe');
+    $('cashInput').value=live.cash!=null?live.cash:data.cash; $('cashSrc').textContent=live.cash!=null?'(live)':'';
+    toast('Synced live data'); renderAll();
+  }catch(e){
+    live.mode='local'; $('modeBadge').className='mode local'; $('modeBadge').textContent='● Local mode';
+    if(window.__triedLive) toast('No backend — staying local'); window.__triedLive=true;
+  }
+}
+
+// ── Slack digest ─────────────────────────────────────────────────────────────
+function slackDigest(){ const m=metrics();
+  return `*Vela finance — ${new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}*
+• MRR: ${fmtK(m.totalRev)}  |  ARR: ${fmtK(m.arr)}  |  ${m.activeCount} active customers
+• Cash: ${fmtK(m.cash)}  |  Net burn: ${fmt(m.netBurn)}/mo  |  Runway: ${months(m.runway.asis)} mo (floor ${months(m.runway.floor)})`; }
+function openSlack(){ $('slackText').textContent=slackDigest(); openModal('slackModal'); }
+function copySlack(){ navigator.clipboard.writeText(slackDigest()); toast('Copied'); }
+async function postSlack(){ try{ const r=await fetch(api('/api/slack'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:slackDigest()})}); toast(r.ok?'Posted to Slack':'Backend not configured'); }catch(e){ toast('Backend not running'); } }
+function openModal(id){ $(id).classList.add('show'); } function closeModal(id){ $(id).classList.remove('show'); }
+function exportJSON(){ const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='vela-finance.json'; a.click(); toast('Exported'); }
+
+// ── Master render ────────────────────────────────────────────────────────────
+function renderAll(){ save(); renderMetrics(); renderCashAccounts(); renderRevenue(); renderRunway(); renderForecast(); renderSpend(); renderScenario(); renderEfficiency(); }
+
+// ── Init ─────────────────────────────────────────────────────────────────────
+async function init(){
+  load();                       // local cache / seed first (instant paint offline)
+  await loadRemote();           // then adopt the shared team state if the backend has it
+  $('currentDate').textContent=new Date().toLocaleDateString('en-US',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
+  $('cashInput').value=data.cash; $('horizonInput').value=data.horizon||24;
+  $('footnote').innerHTML='Shared source of truth for Vela cash, revenue &amp; burn — edits sync for the whole team via Supabase. All customers recurring (ARR = MRR × 12). Live cash/burn from Mercury. Hit “↻ Sync live” to pull teammates’ latest changes.';
+  renderAll();
+  refreshLive();
+}
+init();
+</script>
+</body>
+</html>
