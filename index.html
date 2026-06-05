@@ -93,6 +93,20 @@
 </head>
 <body>
 
+<!-- Login gate — shown on every visit; password validated server-side, kept in memory only -->
+<div id="loginGate" style="position:fixed;inset:0;background:#0a0a0f;z-index:1000;display:flex;align-items:center;justify-content:center;">
+  <div style="background:#12121a;border:1px solid #1e1e2e;border-radius:16px;padding:34px 30px;width:360px;max-width:92%;text-align:center;">
+    <div style="font-size:22px;font-weight:700;color:#fff;margin-bottom:4px;"><span style="color:#6366f1">Vela</span> Finance</div>
+    <div style="font-size:13px;color:#888;margin-bottom:20px;">Enter password to continue</div>
+    <input id="loginPw" type="password" autocomplete="off" placeholder="Password" autofocus
+      style="width:100%;padding:11px 12px;background:#0a0a0f;border:1px solid #2a2a3e;border-radius:8px;color:#fff;font-size:14px;outline:none;"
+      onkeydown="if(event.key==='Enter')doLogin()">
+    <div id="loginErr" style="color:#ef4444;font-size:12px;height:16px;margin:8px 0;"></div>
+    <button onclick="doLogin()" id="loginBtn" style="width:100%;background:#6366f1;color:#fff;border:none;padding:11px;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;">Unlock</button>
+    <div style="font-size:11px;color:#5a5a70;margin-top:14px;">Required every visit · not stored in the link</div>
+  </div>
+</div>
+
 <div class="header">
   <h1><span>Vela</span> Finance Command Center</h1>
   <div class="right">
@@ -294,7 +308,9 @@ const STORAGE_KEY = 'vela_finance_v3';
 // edge function on the same host. Password (if set) is read from this page's ?pw= and
 // forwarded to the gated API. Same-origin, so no CORS issues.
 const API_BASE = 'https://ncvcdvkfvgrwugkydytd.supabase.co/functions/v1/finance';
-const PW = new URLSearchParams(location.search).get('pw') || '';
+// Password is entered via the login screen on EVERY visit and held in memory only —
+// never in the URL, never in localStorage/cookies. Reload = re-enter.
+let PW = '';
 function api(path){ return API_BASE + path + (PW ? ((path.includes('?')?'&':'?') + 'pw=' + encodeURIComponent(PW)) : ''); }
 
 // Seeded from your real Mar–Jun 2026 numbers. All customers are RECURRING.
@@ -650,7 +666,17 @@ async function init(){
   renderAll();
   refreshLive();
 }
-init();
+// ── Login gate: validate password server-side every visit before loading anything ──
+async function doLogin(){
+  const pw=$('loginPw').value; if(!pw){ $('loginErr').textContent='Enter a password'; return; }
+  $('loginBtn').textContent='Checking…'; $('loginBtn').disabled=true; $('loginErr').textContent='';
+  PW=pw;
+  let ok=false;
+  try{ ok=(await fetch(api('/api/health'),{cache:'no-store'})).ok; }catch(e){ ok=false; }
+  if(ok){ $('loginGate').style.display='none'; init(); }
+  else { PW=''; $('loginErr').textContent='Incorrect password'; $('loginBtn').textContent='Unlock'; $('loginBtn').disabled=false; $('loginPw').value=''; $('loginPw').focus(); }
+}
+document.getElementById('loginPw').focus();
 </script>
 </body>
 </html>
