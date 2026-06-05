@@ -542,11 +542,11 @@ async function loadSpend(){
   try{
     spend=await fetch(api('/api/spend?month='+ym),{cache:'no-store'}).then(r=>r.json());
     spendTrend=(await fetch(api('/api/spend?trend=6'),{cache:'no-store'}).then(r=>r.json())).trend;
-    renderSpend();
+    renderSpendExplorer();
   }catch(e){ $('spendTotal').textContent='Failed to load spend'; }
 }
 function catColor(c){ const i=SPEND_CATS.indexOf(c); return i>=0?SPEND_COLORS[i]:'#64748b'; }
-function renderSpend(){
+function renderSpendExplorer(){
   if(!spend) return;
   $('spendMonthHint').textContent=spend.month;
   $('spendTotal').textContent=fmt(spend.total)+' total';
