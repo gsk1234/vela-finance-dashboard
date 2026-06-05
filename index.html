@@ -156,6 +156,11 @@
     <div class="field" style="margin-bottom:10px"><label>Operating cash — Mercury ($) <span class="tiny" id="cashSrc"></span></label><input id="cashInput" type="number" style="width:100%" oninput="setCash(this.value)"></div>
     <div id="cashAccounts" style="margin-bottom:10px"></div>
     <button class="btn btn-sm" style="margin-bottom:14px" onclick="addCashAccount()">+ Cash account</button>
+    <div class="field" style="margin-bottom:12px"><label>Projection cost basis</label>
+      <select id="costBasis" style="width:100%" onchange="data.useActualBasis=(this.value==='actual');save();renderAll()">
+        <option value="actual">Actuals — trailing 3-mo avg (recommended)</option>
+        <option value="plan">Plan — modeled costs only</option>
+      </select></div>
     <div class="field" style="margin-bottom:12px"><label>Forecast horizon (months)</label><input id="horizonInput" type="number" min="1" max="60" value="24" style="width:100%" oninput="setHorizon(this.value)"></div>
     <div class="field" style="margin-bottom:12px"><label>Revenue growth (% / month)</label><input id="revGrowth" type="number" value="0" step="1" style="width:100%" oninput="renderForecast()"></div>
     <div class="field"><label>Cost growth (% / month)</label><input id="costGrowth" type="number" value="0" step="1" style="width:100%" oninput="renderForecast()"></div>
@@ -325,7 +330,13 @@ function metrics(){
   const team=data.team.reduce((s,t)=>s+(+t.monthly||0),0);
   const fixed=data.costs.filter(c=>c.bucket==='fixed').reduce((s,c)=>s+(+c.monthly||0),0);
   const variable=data.costs.filter(c=>c.bucket!=='fixed').reduce((s,c)=>s+(+c.monthly||0),0);
-  const grossCosts=team+fixed+variable, operatingBurn=grossCosts-totalRev;
+  const modeledCosts=team+fixed+variable;
+  // Projection basis: ACTUALS (trailing-3mo avg real Mercury spend) by default, else the typed plan.
+  // The gap between actuals and the modeled lines becomes a "Misc / unmodeled" plug so projections match reality.
+  const useActual = data.useActualBasis!==false && live.trailingActual!=null;
+  const grossCosts = useActual ? live.trailingActual : modeledCosts;
+  const miscUnmodeled = grossCosts - modeledCosts;
+  const operatingBurn=grossCosts-totalRev;
   const opCash=live.cash!=null?live.cash:(+data.cash||0);
   const accts=data.cashAccounts||[];
   const treasury=accts.reduce((s,a)=>s+(+a.balance||0),0);
@@ -336,7 +347,7 @@ function metrics(){
   const ranked=active.slice().sort((a,b)=>(+b.mrr)-(+a.mrr));
   const top1=ranked[0]?+ranked[0].mrr:0, top2=top1+(ranked[1]?+ranked[1].mrr:0);
   const vals=active.map(c=>+c.mrr).sort((a,b)=>a-b);
-  return { cash,opCash,treasury,monthlyInterest,operatingBurn,recurring,services,totalRev,arr,team,fixed,variable,grossCosts,netBurn,activeCount:active.length,ranked,
+  return { cash,opCash,treasury,monthlyInterest,operatingBurn,recurring,services,totalRev,arr,team,fixed,variable,modeledCosts,miscUnmodeled,useActual,trailingActual:live.trailingActual,grossCosts,netBurn,activeCount:active.length,ranked,
     runway:{ asis:runwayAt(totalRev), loseTop1:runwayAt(totalRev-top1), loseTop2:runwayAt(totalRev-top2), floor:runwayAt(0) },
     conc:{ top1Pct:totalRev?top1/totalRev*100:0, top1Name:ranked[0]?ranked[0].name:'—' },
     arpaMean:active.length?totalRev/active.length:0, arpaMedian:vals.length?vals[Math.floor(vals.length/2)]:0,
@@ -417,20 +428,27 @@ function renderSpend(){
   drawDoughnut('spendChart',['Payroll','Rent','Food','Software/SaaS','Payroll tax','Infra/LLM'],
     [m.team,sumCost('Rent (Home/Office)'),sumCost('Food'),sumCost('Software / SaaS'),sumCost('Employer payroll tax'),m.variable],
     ['#6366f1','#3b82f6','#22c55e','#f59e0b','#a855f7','#ef4444']);
-  let actual='';
-  if(live.mode==='live'&&live.actualBurn!=null){ const variance=live.actualBurn-m.grossCosts;
-    actual=`<div class="runway-row"><div class="lbl">Actual spend (last 30d)<small>Mercury, excl. ${fmtK(live.actualExcluded||0)} self-transfers</small></div><div class="v">${fmt(live.actualBurn)}</div></div>
-      <div class="runway-row"><div class="lbl">Plan vs actual variance</div><div class="v ${variance>0?'danger':'good'}">${variance>0?'+':''}${fmt(variance)}</div></div>`;
-    if(Array.isArray(live.vendors)&&live.vendors.length){ actual+=`<div class="tiny" style="margin-top:8px">Top real outflows (30d): `+live.vendors.map(v=>`${esc(v.name)} ${fmtK(v.amount)}`).join(' · ')+`</div>`; } }
+  const basis = m.useActual
+    ? `<div class="runway-row"><div class="lbl"><b>Gross costs — actuals basis</b><small>trailing 3-mo avg real Mercury spend (${(live.trailingMonths||[]).join(', ')})</small></div><div class="v">${fmt(m.grossCosts)}</div></div>`
+    : `<div class="runway-row"><div class="lbl"><b>Gross costs — plan basis</b><small>modeled lines only</small></div><div class="v">${fmt(m.grossCosts)}</div></div>`;
+  const misc = m.useActual
+    ? `<div class="runway-row"><div class="lbl">— Misc / unmodeled (auto)<small>actuals − modeled lines: card spend, timing, untracked</small></div><div class="v ${m.miscUnmodeled>=0?'warn':'good'}">${fmt(m.miscUnmodeled)}</div></div>`
+    : `<div class="runway-row"><div class="lbl tiny">Switch to Actuals basis in Inputs to fold in real spend${m.trailingActual!=null?' (trailing avg '+fmt(m.trailingActual)+')':''}</div><div class="v"></div></div>`;
+  let extra='';
+  if(live.mode==='live'&&live.actualBurn!=null){
+    extra=`<div class="runway-row"><div class="lbl">Actual spend (last 30d)<small>Mercury, excl. ${fmtK(live.actualExcluded||0)} self-transfers</small></div><div class="v">${fmt(live.actualBurn)}</div></div>`;
+    if(Array.isArray(live.vendors)&&live.vendors.length) extra+=`<div class="tiny" style="margin-top:8px">Top outflows (30d): `+live.vendors.map(v=>`${esc(v.name)} ${fmtK(v.amount)}`).join(' · ')+`</div>`;
+  }
   $('burnSummary').innerHTML=`
-    <div class="runway-row"><div class="lbl">Gross monthly costs<small>before revenue</small></div><div class="v">${fmt(m.grossCosts)}</div></div>
+    ${basis}
     <div class="runway-row"><div class="lbl">— Payroll (${data.team.length})</div><div class="v">${fmt(m.team)}</div></div>
     <div class="runway-row"><div class="lbl">— Fixed</div><div class="v">${fmt(m.fixed)}</div></div>
     <div class="runway-row"><div class="lbl">— Variable / infra</div><div class="v">${fmt(m.variable)}</div></div>
+    ${misc}
     <div class="runway-row"><div class="lbl">Revenue offset</div><div class="v good">-${fmt(m.totalRev)}</div></div>
-    <div class="runway-row"><div class="lbl">Operating net burn</div><div class="v ${m.operatingBurn<=0?'good':'warn'}">${fmt(m.operatingBurn)}</div></div>
     <div class="runway-row"><div class="lbl">Treasury interest income<small>${fmtK(m.treasury)} @ 5% APY</small></div><div class="v good">-${fmt(m.monthlyInterest)}</div></div>
-    <div class="runway-row"><div class="lbl"><b>Net cash change / mo</b></div><div class="v ${m.netBurn<=0?'good':'warn'}">${fmt(m.netBurn)}</div></div>${actual}`;
+    <div class="runway-row"><div class="lbl"><b>Net cash change / mo</b><small>${m.useActual?'actuals':'plan'} − revenue − interest</small></div><div class="v ${m.netBurn<=0?'good':'warn'}">${fmt(m.netBurn)}</div></div>
+    ${extra}`;
   $('teamTable').innerHTML=data.team.map((t,i)=>`
     <tr><td><input class="cell" value="${esc(t.name)}" oninput="data.team[${i}].name=this.value;save()"></td>
     <td><input class="cell" value="${esc(t.role||'')}" oninput="data.team[${i}].role=this.value;save()"></td>
@@ -542,7 +560,13 @@ async function loadSpend(){
   try{
     spend=await fetch(api('/api/spend?month='+ym),{cache:'no-store'}).then(r=>r.json());
     spendTrend=(await fetch(api('/api/spend?trend=6'),{cache:'no-store'}).then(r=>r.json())).trend;
-    renderSpendExplorer();
+    // trailing-3 full-month average actual spend (exclude current partial month) → projection basis
+    const cur=new Date().toISOString().slice(0,7);
+    const full=(spendTrend||[]).filter(t=>t.month!==cur);
+    const last3=full.slice(-3);
+    live.trailingActual = last3.length ? Math.round(last3.reduce((s,t)=>s+t.total,0)/last3.length) : null;
+    live.trailingMonths = last3.map(t=>t.month);
+    renderSpendExplorer(); renderAll();   // re-render so runway/forecast use actuals
   }catch(e){ $('spendTotal').textContent='Failed to load spend'; }
 }
 function catColor(c){ const i=SPEND_CATS.indexOf(c); return i>=0?SPEND_COLORS[i]:'#64748b'; }
@@ -577,6 +601,7 @@ async function init(){
   $('currentDate').textContent=new Date().toLocaleDateString('en-US',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
   $('cashInput').value=data.cash; $('horizonInput').value=data.horizon||24;
   $('spendMonth').value=defaultSpendMonth();
+  $('costBasis').value=(data.useActualBasis===false)?'plan':'actual';
   $('footnote').innerHTML='Shared source of truth for Vela cash, revenue &amp; burn — edits sync for the whole team via Supabase. All customers recurring (ARR = MRR × 12). Live cash/burn from Mercury. Hit “↻ Sync live” to pull teammates’ latest changes.';
   renderAll();
   refreshLive();
