@@ -148,7 +148,7 @@
       <button class="btn btn-sm" onclick="addPilot()">+ Add pilot</button>
     </h2>
     <table>
-      <thead><tr><th>Pilot / Company</th><th class="num">$ / mo</th><th>Start</th><th>End</th><th>Status</th><th>Notes</th><th></th></tr></thead>
+      <thead><tr><th>Pilot / Company</th><th class="num">Fee</th><th>Start</th><th>End</th><th>Status</th><th>Notes</th><th></th></tr></thead>
       <tbody id="pilotTable"></tbody>
     </table>
   </div>
@@ -574,10 +574,10 @@ function exportJSON(){ const blob=new Blob([JSON.stringify(data,null,2)],{type:'
 // ── Pilots (tracking only — no effect on burn/runway/revenue) ───────────────
 function renderPilots(){
   data.pilots=data.pilots||[];
-  const active=data.pilots.filter(p=>(p.status||'active')==='active');
-  const mrr=active.reduce((s,p)=>s+(+p.monthly||0),0);
-  $('pilotSummary').innerHTML=`Pilots <span class="tiny">· ${active.length} active · ${fmtK(mrr)}/mo in flight</span>`;
-  const STAT=['active','converted','ended'];
+  const live_=data.pilots.filter(p=>['active','upcoming'].includes(p.status||'active'));
+  const fees=live_.reduce((s,p)=>s+(+p.monthly||0),0);
+  $('pilotSummary').innerHTML=`Pilots <span class="tiny">· ${data.pilots.filter(p=>(p.status||'')==='active').length} active · ${data.pilots.filter(p=>p.status==='upcoming').length} upcoming · ${fmtK(fees)} in pilot fees (active+upcoming)</span>`;
+  const STAT=['upcoming','active','converted','ended'];
   $('pilotTable').innerHTML=data.pilots.length?data.pilots.map((p,i)=>`
     <tr>
       <td><input class="cell" value="${esc(p.name||'')}" oninput="data.pilots[${i}].name=this.value;save()"></td>
