@@ -185,6 +185,34 @@
   </div>
 </div>
 
+<!-- ── SPEND EXPLORER (actuals from Mercury) ────────────────────────────── -->
+<div class="section-title">Spend explorer — actuals from Mercury</div>
+<div class="grid g3">
+  <div class="card">
+    <h2>Month spend <span class="hint" id="spendMonthHint"></span></h2>
+    <div class="row-inline" style="margin-bottom:10px">
+      <input type="month" id="spendMonth" onchange="loadSpend()">
+      <button class="btn-ghost btn-sm" onclick="exportSpendCSV()">CSV</button>
+    </div>
+    <div id="spendTotal" style="font-size:24px;font-weight:700;color:#fff">—</div>
+    <canvas id="spendCatChart" style="margin-top:12px;max-height:200px"></canvas>
+  </div>
+  <div class="card">
+    <h2>By vendor <span class="hint">tag to recategorize (syncs)</span></h2>
+    <div id="spendVendors" style="max-height:320px;overflow:auto"></div>
+  </div>
+  <div class="card">
+    <h2>6-month trend <span class="hint">total real spend</span></h2>
+    <canvas id="spendTrendChart"></canvas>
+  </div>
+</div>
+<div class="grid">
+  <div class="card full">
+    <h2>Transactions <span class="hint" id="spendTxnHint"></span></h2>
+    <div id="spendTxns" style="max-height:340px;overflow:auto"></div>
+  </div>
+</div>
+
 <!-- ── SCENARIO PLANNER (concentration/churn lives here, opt-in) ─────────── -->
 <div class="section-title">Scenario planner</div>
 <div class="grid g2">
@@ -252,7 +280,7 @@ function api(path){ return API_BASE + path + (PW ? ((path.includes('?')?'&':'?')
 // Seeded from your real Mar–Jun 2026 numbers. All customers are RECURRING.
 // cash = operating cash (Mercury, overridden live). cashAccounts = other balances
 // (Palus treasury earning APY) added on top, with interest counted as income.
-const SEED = { cash:0, cashAccounts:[], customers:[], team:[], costs:[], horizon:24 };
+const SEED = { cash:0, cashAccounts:[], customers:[], team:[], costs:[], horizon:24, vendorCategories:{} };
 
 let data, live = { mode:'local', cash:null, customers:null, actualBurn:null, asOf:null };
 let editIdx = null;
@@ -485,7 +513,7 @@ async function refreshLive(){
     live.asOf=j.asOf||null;
     $('modeBadge').className='mode live'; $('modeBadge').textContent='● Live · '+(j.source||'Mercury/Stripe');
     $('cashInput').value=live.cash!=null?live.cash:data.cash; $('cashSrc').textContent=live.cash!=null?'(live)':'';
-    toast('Synced live data'); renderAll();
+    toast('Synced live data'); renderAll(); loadSpend();
   }catch(e){
     live.mode='local'; $('modeBadge').className='mode local'; $('modeBadge').textContent='● Local mode';
     if(window.__triedLive) toast('No backend — staying local'); window.__triedLive=true;
@@ -503,6 +531,42 @@ async function postSlack(){ try{ const r=await fetch(api('/api/slack'),{method:'
 function openModal(id){ $(id).classList.add('show'); } function closeModal(id){ $(id).classList.remove('show'); }
 function exportJSON(){ const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='vela-finance.json'; a.click(); toast('Exported'); }
 
+// ── Spend explorer (actuals from Mercury via backend) ───────────────────────
+const SPEND_CATS=['Payroll','Contractors','Rent','Infra/AI','Software/SaaS','Marketing','Card (untagged)','Fees','Other','Excluded'];
+const SPEND_COLORS=['#6366f1','#3b82f6','#22c55e','#f59e0b','#a855f7','#ef4444','#14b8a6','#eab308','#64748b','#3f3f46'];
+let spend=null, spendTrend=null;
+function defaultSpendMonth(){ const d=new Date(); d.setDate(1); d.setMonth(d.getMonth()-1); return d.toISOString().slice(0,7); }
+async function loadSpend(){
+  if(live.mode!=='live'){ $('spendTotal').textContent='— open with ?pw= to load Mercury actuals'; return; }
+  const ym=$('spendMonth').value||defaultSpendMonth();
+  try{
+    spend=await fetch(api('/api/spend?month='+ym),{cache:'no-store'}).then(r=>r.json());
+    spendTrend=(await fetch(api('/api/spend?trend=6'),{cache:'no-store'}).then(r=>r.json())).trend;
+    renderSpend();
+  }catch(e){ $('spendTotal').textContent='Failed to load spend'; }
+}
+function catColor(c){ const i=SPEND_CATS.indexOf(c); return i>=0?SPEND_COLORS[i]:'#64748b'; }
+function renderSpend(){
+  if(!spend) return;
+  $('spendMonthHint').textContent=spend.month;
+  $('spendTotal').textContent=fmt(spend.total)+' total';
+  drawDoughnut('spendCatChart', spend.byCategory.map(c=>c.category), spend.byCategory.map(c=>c.amount), spend.byCategory.map(c=>catColor(c.category)));
+  $('spendVendors').innerHTML=spend.byVendor.map((v,i)=>{
+    const opts=SPEND_CATS.map(c=>`<option ${c===v.category?'selected':''}>${c}</option>`).join('');
+    return `<div class="runway-row"><div class="lbl">${esc(v.name)}</div>
+      <div style="display:flex;gap:8px;align-items:center"><span class="v">${fmt(v.amount)}</span>
+      <select style="padding:4px 6px;font-size:11px" onchange="tagVendorByIdx(${i},this.value)">${opts}</select></div></div>`;
+  }).join('');
+  if(spendTrend) drawBar('spendTrendChart', spendTrend.map(t=>t.month.slice(2)), spendTrend.map(t=>t.total), spendTrend.map(t=>t.month===spend.month?'#6366f1':'#3b82f6'));
+  $('spendTxnHint').textContent=spend.txns.length+' transactions · sorted by size';
+  $('spendTxns').innerHTML='<table><thead><tr><th>Date</th><th>Payee</th><th>Category</th><th class="num">Amount</th></tr></thead><tbody>'+
+    spend.txns.map(t=>`<tr><td class="tiny">${esc(t.date)}</td><td>${esc(t.name)}</td><td><span class="tag recurring">${esc(t.category)}</span></td><td class="num">${fmt(t.amount)}</td></tr>`).join('')+'</tbody></table>';
+}
+function tagVendorByIdx(i,cat){ const v=spend&&spend.byVendor[i]; if(!v)return; data.vendorCategories=data.vendorCategories||{}; data.vendorCategories[v.name.toLowerCase()]=cat; save(); toast('Tagged '+v.name+' → '+cat); loadSpend(); }
+function exportSpendCSV(){ if(!spend)return; const rows=[['Date','Payee','Category','Amount'],...spend.txns.map(t=>[t.date,t.name,t.category,t.amount])];
+  const csv=rows.map(r=>r.map(x=>`"${String(x).replace(/"/g,'""')}"`).join(',')).join('\n');
+  const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'})); a.download='vela-spend-'+spend.month+'.csv'; a.click(); toast('Exported'); }
+
 // ── Master render ────────────────────────────────────────────────────────────
 function renderAll(){ save(); renderMetrics(); renderCashAccounts(); renderRevenue(); renderRunway(); renderForecast(); renderSpend(); renderScenario(); renderEfficiency(); }
 
@@ -512,6 +576,7 @@ async function init(){
   await loadRemote();           // then adopt the shared team state if the backend has it
   $('currentDate').textContent=new Date().toLocaleDateString('en-US',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
   $('cashInput').value=data.cash; $('horizonInput').value=data.horizon||24;
+  $('spendMonth').value=defaultSpendMonth();
   $('footnote').innerHTML='Shared source of truth for Vela cash, revenue &amp; burn — edits sync for the whole team via Supabase. All customers recurring (ARR = MRR × 12). Live cash/burn from Mercury. Hit “↻ Sync live” to pull teammates’ latest changes.';
   renderAll();
   refreshLive();
