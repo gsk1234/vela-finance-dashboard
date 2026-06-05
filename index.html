@@ -532,8 +532,8 @@ function openModal(id){ $(id).classList.add('show'); } function closeModal(id){ 
 function exportJSON(){ const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='vela-finance.json'; a.click(); toast('Exported'); }
 
 // ── Spend explorer (actuals from Mercury via backend) ───────────────────────
-const SPEND_CATS=['Payroll','Contractors','Rent','Infra/AI','Software/SaaS','Marketing','Card (untagged)','Fees','Other','Excluded'];
-const SPEND_COLORS=['#6366f1','#3b82f6','#22c55e','#f59e0b','#a855f7','#ef4444','#14b8a6','#eab308','#64748b','#3f3f46'];
+const SPEND_CATS=['Payroll','Contractors','Rent','Infra/AI','Software/SaaS','Marketing','Travel','Meals','AMEX card','Fees','Other','Excluded'];
+const SPEND_COLORS=['#6366f1','#3b82f6','#22c55e','#f59e0b','#a855f7','#ef4444','#0ea5e9','#f97316','#14b8a6','#eab308','#64748b','#3f3f46'];
 let spend=null, spendTrend=null;
 function defaultSpendMonth(){ const d=new Date(); d.setDate(1); d.setMonth(d.getMonth()-1); return d.toISOString().slice(0,7); }
 async function loadSpend(){
