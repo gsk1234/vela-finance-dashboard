@@ -103,7 +103,7 @@
       onkeydown="if(event.key==='Enter')doLogin()">
     <div id="loginErr" style="color:#ef4444;font-size:12px;height:16px;margin:8px 0;"></div>
     <button onclick="doLogin()" id="loginBtn" style="width:100%;background:#6366f1;color:#fff;border:none;padding:11px;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;">Unlock</button>
-    <div style="font-size:11px;color:#5a5a70;margin-top:14px;">Required every visit · not stored in the link</div>
+    <div style="font-size:11px;color:#5a5a70;margin-top:14px;">Required every visit · ?pw= links auto-unlock, then the password is scrubbed from the URL</div>
   </div>
 </div>
 
@@ -304,14 +304,15 @@
 //  (finance-server.js / Supabase Edge Function) is reachable: Mercury cash + Stripe revenue.
 // ─────────────────────────────────────────────────────────────────────────
 const STORAGE_KEY = 'vela_finance_v3';
-// This page is hosted on Supabase Storage (renders as real HTML); the API lives in the
-// edge function on the same host. Password (if set) is read from this page's ?pw= and
-// forwarded to the gated API. Same-origin, so no CORS issues.
+// This page is hosted on GitHub Pages; the API is the Supabase edge function below.
 const API_BASE = 'https://ncvcdvkfvgrwugkydytd.supabase.co/functions/v1/finance';
-// Password is entered via the login screen on EVERY visit and held in memory only —
-// never in the URL, never in localStorage/cookies. Reload = re-enter.
-let PW = '';
-function api(path){ return API_BASE + path + (PW ? ((path.includes('?')?'&':'?') + 'pw=' + encodeURIComponent(PW)) : ''); }
+// Password is held in memory only — never in localStorage/cookies. It arrives via the
+// login screen or a one-shot ?pw= link (scrubbed from the address bar before login).
+// Sent as the x-vela-pw header so it stays out of URLs and server request logs; if the
+// deployed API predates that header, doLogin falls back to the legacy ?pw= query once.
+let PW = '', PW_IN_HEADER = true;
+function api(path){ return API_BASE + path + (!PW_IN_HEADER && PW ? ((path.includes('?')?'&':'?') + 'pw=' + encodeURIComponent(PW)) : ''); }
+function apiFetch(path, opts={}){ return fetch(api(path), {...opts, headers:{...(opts.headers||{}), ...(PW_IN_HEADER && PW ? {'x-vela-pw':PW} : {})}}); }
 
 // Seeded from your real Mar–Jun 2026 numbers. All customers are RECURRING.
 // cash = operating cash (Mercury, overridden live). cashAccounts = other balances
@@ -334,15 +335,18 @@ function accrueTreasury(){
 }
 function save(){ localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); pushRemote(); }
 // Shared state: debounced write of the whole document to the Supabase-backed store.
-let _pushTimer;
-function pushRemote(){ clearTimeout(_pushTimer); _pushTimer=setTimeout(()=>{
-  fetch(api('/api/save'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).catch(()=>{}); },1000); }
+// remoteSynced gates ALL remote writes: until we've successfully READ the shared store,
+// this client may only be holding the empty seed / a stale local cache, and pushing that
+// would overwrite the whole team's data (this wiped the store once — keep the gate).
+let _pushTimer, remoteSynced=false;
+function pushRemote(){ if(!remoteSynced) return; clearTimeout(_pushTimer); _pushTimer=setTimeout(()=>{
+  apiFetch('/api/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).catch(()=>{}); },1000); }
 async function loadRemote(){
-  try{ const r=await fetch(api('/api/data'),{cache:'no-store'}); if(!r.ok) return false;
+  try{ const r=await apiFetch('/api/data',{cache:'no-store'}); if(!r.ok) return false;
     const j=await r.json();
-    if(j&&j.state){ data=j.state; accrueTreasury(); return true; }   // adopt shared state
-    pushRemote(); return false;                                      // empty store -> seed it
-  }catch(e){ return false; }
+    if(j&&j.state){ data=j.state; remoteSynced=true; accrueTreasury(); return true; }  // adopt shared state
+    remoteSynced=true; pushRemote(); return false;                   // store truly empty -> seed it
+  }catch(e){ return false; }                                         // can't read -> stay read-only
 }
 function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
 function $(id){ return document.getElementById(id); }
@@ -558,9 +562,9 @@ function setHorizon(v){ data.horizon=+v||24; save(); renderForecast(); }
 // ── Live backend (Mercury + Stripe) — relative paths work for Node & Supabase ─
 async function refreshLive(){
   try{
-    const h=await fetch(api('/api/health'),{cache:'no-store'}); if(!h.ok) throw 0;
+    const h=await apiFetch('/api/health',{cache:'no-store'}); if(!h.ok) throw 0;
     await loadRemote();   // pull teammates' latest shared edits
-    const j=await fetch(api('/api/summary'),{cache:'no-store'}).then(r=>r.json());
+    const j=await apiFetch('/api/summary',{cache:'no-store'}).then(r=>r.json());
     live.mode='live';
     if(j.cash!=null) live.cash=j.cash;
     if(j.actualBurn!=null) live.actualBurn=j.actualBurn;
@@ -583,7 +587,7 @@ function slackDigest(){ const m=metrics();
 • Cash: ${fmtK(m.cash)}  |  Net burn: ${fmt(m.netBurn)}/mo  |  Runway: ${months(m.runway.asis)} mo (floor ${months(m.runway.floor)})`; }
 function openSlack(){ $('slackText').textContent=slackDigest(); openModal('slackModal'); }
 function copySlack(){ navigator.clipboard.writeText(slackDigest()); toast('Copied'); }
-async function postSlack(){ try{ const r=await fetch(api('/api/slack'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:slackDigest()})}); toast(r.ok?'Posted to Slack':'Backend not configured'); }catch(e){ toast('Backend not running'); } }
+async function postSlack(){ try{ const r=await apiFetch('/api/slack',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:slackDigest()})}); toast(r.ok?'Posted to Slack':'Backend not configured'); }catch(e){ toast('Backend not running'); } }
 function openModal(id){ $(id).classList.add('show'); } function closeModal(id){ $(id).classList.remove('show'); }
 function exportJSON(){ const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='vela-finance.json'; a.click(); toast('Exported'); }
 
@@ -614,11 +618,11 @@ const SPEND_COLORS=['#6366f1','#3b82f6','#22c55e','#f59e0b','#a855f7','#ef4444',
 let spend=null, spendTrend=null;
 function defaultSpendMonth(){ const d=new Date(); d.setDate(1); d.setMonth(d.getMonth()-1); return d.toISOString().slice(0,7); }
 async function loadSpend(){
-  if(live.mode!=='live'){ $('spendTotal').textContent='— open with ?pw= to load Mercury actuals'; return; }
+  if(live.mode!=='live'){ $('spendTotal').textContent='— sync live to load Mercury actuals'; return; }
   const ym=$('spendMonth').value||defaultSpendMonth();
   try{
-    spend=await fetch(api('/api/spend?month='+ym),{cache:'no-store'}).then(r=>r.json());
-    spendTrend=(await fetch(api('/api/spend?trend=6'),{cache:'no-store'}).then(r=>r.json())).trend;
+    spend=await apiFetch('/api/spend?month='+ym,{cache:'no-store'}).then(r=>r.json());
+    spendTrend=(await apiFetch('/api/spend?trend=6',{cache:'no-store'}).then(r=>r.json())).trend;
     // trailing-3 full-month average actual spend (exclude current partial month) → projection basis
     const cur=new Date().toISOString().slice(0,7);
     const full=(spendTrend||[]).filter(t=>t.month!==cur);
@@ -670,13 +674,28 @@ async function init(){
 async function doLogin(){
   const pw=$('loginPw').value; if(!pw){ $('loginErr').textContent='Enter a password'; return; }
   $('loginBtn').textContent='Checking…'; $('loginBtn').disabled=true; $('loginErr').textContent='';
-  PW=pw;
+  PW=pw; PW_IN_HEADER=true;
   let ok=false;
-  try{ ok=(await fetch(api('/api/health'),{cache:'no-store'})).ok; }catch(e){ ok=false; }
+  try{ ok=(await apiFetch('/api/health',{cache:'no-store'})).ok; }catch(e){ ok=false; }
+  if(!ok){
+    // deployed API may predate the x-vela-pw header — retry once with the legacy ?pw= query
+    PW_IN_HEADER=false;
+    try{ ok=(await apiFetch('/api/health',{cache:'no-store'})).ok; }catch(e){ ok=false; }
+    if(!ok) PW_IN_HEADER=true;
+  }
   if(ok){ $('loginGate').style.display='none'; init(); }
   else { PW=''; $('loginErr').textContent='Incorrect password'; $('loginBtn').textContent='Unlock'; $('loginBtn').disabled=false; $('loginPw').value=''; $('loginPw').focus(); }
 }
-document.getElementById('loginPw').focus();
+// One-shot ?pw= convenience link: scrub the password out of the URL/history FIRST,
+// then try it. Wrong password just lands on the normal gate with an error.
+(function(){
+  const q=new URLSearchParams(location.search); const urlPw=q.get('pw');
+  if(urlPw){
+    q.delete('pw');
+    history.replaceState(null,'',location.pathname+(q.toString()?'?'+q.toString():'')+location.hash);
+    $('loginPw').value=urlPw; doLogin();
+  } else { $('loginPw').focus(); }
+})();
 </script>
 </body>
 </html>
