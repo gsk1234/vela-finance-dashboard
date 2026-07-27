@@ -308,9 +308,11 @@ const STORAGE_KEY = 'vela_finance_v3';
 const API_BASE = 'https://ncvcdvkfvgrwugkydytd.supabase.co/functions/v1/finance';
 // Password is held in memory only — never in localStorage/cookies. It arrives via the
 // login screen or a one-shot ?pw= link (scrubbed from the address bar before login).
-// Sent as the x-vela-pw header so it stays out of URLs and server request logs; if the
-// deployed API predates that header, doLogin falls back to the legacy ?pw= query once.
-let PW = '', PW_IN_HEADER = true;
+// Default is ?pw= query auth: the deployed edge function only accepts that, and sending
+// the x-vela-pw header first fails its CORS preflight (blocked request + console error
+// on every visit, which reads as "Supabase disconnected"). doLogin still probes the
+// header as a fallback so a redeployed API that prefers it keeps working.
+let PW = '', PW_IN_HEADER = false;
 function api(path){ return API_BASE + path + (!PW_IN_HEADER && PW ? ((path.includes('?')?'&':'?') + 'pw=' + encodeURIComponent(PW)) : ''); }
 function apiFetch(path, opts={}){ return fetch(api(path), {...opts, headers:{...(opts.headers||{}), ...(PW_IN_HEADER && PW ? {'x-vela-pw':PW} : {})}}); }
 
@@ -464,7 +466,7 @@ function renderForecast(){
 
 // ── Spend / burn ──────────────────────────────────────────────────────────
 function sumCost(name){ return data.costs.filter(c=>c.name===name).reduce((s,c)=>s+(+c.monthly||0),0); }
-function renderSpend(){
+function renderBurn(){
   const m=metrics();
   drawDoughnut('spendChart',['Payroll','Rent','Food','Software/SaaS','Payroll tax','Infra/LLM'],
     [m.team,sumCost('Rent (Home/Office)'),sumCost('Food'),sumCost('Software / SaaS'),sumCost('Employer payroll tax'),m.variable],
@@ -491,15 +493,20 @@ function renderSpend(){
     <div class="runway-row"><div class="lbl">Treasury interest income<small>${fmtK(m.treasury)} @ 5% APY</small></div><div class="v good">-${fmt(m.monthlyInterest)}</div></div>
     <div class="runway-row"><div class="lbl"><b>Net cash change / mo</b><small>${m.useActual?'trailing actuals':'major line items'} − revenue − interest</small></div><div class="v ${m.netBurn<=0?'good':'warn'}">${fmt(m.netBurn)}</div></div>
     ${extra}`;
+}
+// Team + cost tables live in their own renderer so renderDerived() can refresh every
+// summary/chart WITHOUT rebuilding the table row the user is typing in (rebuilding the
+// innerHTML mid-keystroke destroyed the focused input — you could only type one digit).
+function renderTables(){
   $('teamTable').innerHTML=data.team.map((t,i)=>`
     <tr><td><input class="cell" value="${esc(t.name)}" oninput="data.team[${i}].name=this.value;save()"></td>
     <td><input class="cell" value="${esc(t.role||'')}" oninput="data.team[${i}].role=this.value;save()"></td>
-    <td class="num"><input class="cell num" type="number" step="0.01" value="${t.monthly}" oninput="data.team[${i}].monthly=+this.value;renderAll()"></td>
+    <td class="num"><input class="cell num" type="number" step="0.01" value="${t.monthly}" oninput="data.team[${i}].monthly=+this.value;renderDerived()"></td>
     <td><button class="btn btn-sm btn-danger" onclick="data.team.splice(${i},1);renderAll()">×</button></td></tr>`).join('');
   $('costTable').innerHTML=data.costs.map((c,i)=>`
     <tr><td><input class="cell" value="${esc(c.name)}" oninput="data.costs[${i}].name=this.value;save()"></td>
     <td><select onchange="data.costs[${i}].bucket=this.value;renderAll()"><option value="fixed" ${c.bucket==='fixed'?'selected':''}>Fixed</option><option value="variable" ${c.bucket!=='fixed'?'selected':''}>Variable</option></select></td>
-    <td class="num"><input class="cell num" type="number" step="0.01" value="${c.monthly}" oninput="data.costs[${i}].monthly=+this.value;renderAll()"></td>
+    <td class="num"><input class="cell num" type="number" step="0.01" value="${c.monthly}" oninput="data.costs[${i}].monthly=+this.value;renderDerived()"></td>
     <td><button class="btn btn-sm btn-danger" onclick="data.costs.splice(${i},1);renderAll()">×</button></td></tr>`).join('');
 }
 
@@ -549,14 +556,14 @@ function renderCashAccounts(){
   $('cashAccounts').innerHTML=data.cashAccounts.map((a,i)=>`
     <div class="row-inline" style="margin-bottom:2px">
       <input class="cell" style="flex:1;min-width:110px" value="${esc(a.name)}" oninput="data.cashAccounts[${i}].name=this.value;save()">
-      <input class="cell num w120" type="number" value="${a.balance}" title="balance" onchange="data.cashAccounts[${i}].asOf=new Date().toISOString().slice(0,10)" oninput="data.cashAccounts[${i}].balance=+this.value;renderAll()">
-      <input class="cell num w90" type="number" step="0.1" value="${a.apy}" title="APY %" oninput="data.cashAccounts[${i}].apy=+this.value;renderAll()"><span class="tiny">% APY</span>
+      <input class="cell num w120" type="number" value="${a.balance}" title="balance" onchange="data.cashAccounts[${i}].asOf=new Date().toISOString().slice(0,10);save()" oninput="data.cashAccounts[${i}].balance=+this.value;renderDerived()">
+      <input class="cell num w90" type="number" step="0.1" value="${a.apy}" title="APY %" oninput="data.cashAccounts[${i}].apy=+this.value;renderDerived()"><span class="tiny">% APY</span>
       <button class="btn btn-sm btn-danger" onclick="data.cashAccounts.splice(${i},1);renderAll()">×</button>
     </div>
     <div class="tiny" style="margin-bottom:8px">↑ auto-accrues at ${a.apy}% APY · as of ${esc(a.asOf||'today')} · +${fmt((+a.balance||0)*((+a.apy||0)/100)/12)}/mo interest</div>`).join('');
 }
 function addCashAccount(){ (data.cashAccounts=data.cashAccounts||[]).push({name:'New account',balance:0,apy:0}); save(); renderAll(); }
-function setCash(v){ data.cash=+v||0; save(); renderAll(); }
+function setCash(v){ data.cash=+v||0; renderDerived(); }
 function setHorizon(v){ data.horizon=+v||24; save(); renderForecast(); }
 
 // ── Live backend (Mercury + Stripe) — relative paths work for Node & Supabase ─
@@ -592,16 +599,19 @@ function openModal(id){ $(id).classList.add('show'); } function closeModal(id){ 
 function exportJSON(){ const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='vela-finance.json'; a.click(); toast('Exported'); }
 
 // ── Pilots (tracking only — no effect on burn/runway/revenue) ───────────────
-function renderPilots(){
-  data.pilots=data.pilots||[];
-  const live_=data.pilots.filter(p=>['active','upcoming'].includes(p.status||'active'));
+function renderPilotSummary(){
+  const live_=(data.pilots||[]).filter(p=>['active','upcoming'].includes(p.status||'active'));
   const fees=live_.reduce((s,p)=>s+(+p.monthly||0),0);
   $('pilotSummary').innerHTML=`Pilots <span class="tiny">· ${data.pilots.filter(p=>(p.status||'')==='active').length} active · ${data.pilots.filter(p=>p.status==='upcoming').length} upcoming · ${fmtK(fees)} in pilot fees (active+upcoming)</span>`;
+}
+function renderPilots(){
+  data.pilots=data.pilots||[];
+  renderPilotSummary();
   const STAT=['upcoming','active','converted','ended'];
   $('pilotTable').innerHTML=data.pilots.length?data.pilots.map((p,i)=>`
     <tr>
       <td><input class="cell" value="${esc(p.name||'')}" oninput="data.pilots[${i}].name=this.value;save()"></td>
-      <td class="num"><input class="cell num" type="number" value="${p.monthly||0}" oninput="data.pilots[${i}].monthly=+this.value;renderPilots();save()"></td>
+      <td class="num"><input class="cell num" type="number" value="${p.monthly||0}" oninput="data.pilots[${i}].monthly=+this.value;renderPilotSummary();save()"></td>
       <td><input class="cell" type="date" value="${esc(p.start||'')}" oninput="data.pilots[${i}].start=this.value;save()"></td>
       <td><input class="cell" type="date" value="${esc(p.end||'')}" oninput="data.pilots[${i}].end=this.value;save()"></td>
       <td><select onchange="data.pilots[${i}].status=this.value;renderPilots();save()">${STAT.map(s=>`<option ${(p.status||'active')===s?'selected':''}>${s}</option>`).join('')}</select></td>
@@ -630,7 +640,7 @@ async function loadSpend(){
     // use recurringTotal (excludes one-time conference/legal/etc.) so a single one-off doesn't inflate burn
     live.trailingActual = last3.length ? Math.round(last3.reduce((s,t)=>s+(t.recurringTotal??t.total),0)/last3.length) : null;
     live.trailingMonths = last3.map(t=>t.month);
-    renderSpendExplorer(); renderAll();   // re-render so runway/forecast use actuals
+    renderSpendExplorer(); renderDerived();   // derived-only: this lands async and must not rebuild tables mid-edit
   }catch(e){ $('spendTotal').textContent='Failed to load spend'; }
 }
 function catColor(c){ const i=SPEND_CATS.indexOf(c); return i>=0?SPEND_COLORS[i]:'#64748b'; }
@@ -656,7 +666,9 @@ function exportSpendCSV(){ if(!spend)return; const rows=[['Date','Payee','Catego
   const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'})); a.download='vela-spend-'+spend.month+'.csv'; a.click(); toast('Exported'); }
 
 // ── Master render ────────────────────────────────────────────────────────────
-function renderAll(){ save(); renderMetrics(); renderCashAccounts(); renderRevenue(); renderPilots(); renderRunway(); renderForecast(); renderSpend(); renderScenario(); renderEfficiency(); }
+function renderAll(){ save(); renderMetrics(); renderCashAccounts(); renderRevenue(); renderPilots(); renderRunway(); renderForecast(); renderBurn(); renderTables(); renderScenario(); renderEfficiency(); }
+// Everything EXCEPT the editable tables — safe to call from oninput while typing.
+function renderDerived(){ save(); renderMetrics(); renderRunway(); renderForecast(); renderBurn(); renderScenario(); renderEfficiency(); }
 
 // ── Init ─────────────────────────────────────────────────────────────────────
 async function init(){
@@ -674,14 +686,14 @@ async function init(){
 async function doLogin(){
   const pw=$('loginPw').value; if(!pw){ $('loginErr').textContent='Enter a password'; return; }
   $('loginBtn').textContent='Checking…'; $('loginBtn').disabled=true; $('loginErr').textContent='';
-  PW=pw; PW_IN_HEADER=true;
+  PW=pw; PW_IN_HEADER=false;
   let ok=false;
   try{ ok=(await apiFetch('/api/health',{cache:'no-store'})).ok; }catch(e){ ok=false; }
   if(!ok){
-    // deployed API may predate the x-vela-pw header — retry once with the legacy ?pw= query
-    PW_IN_HEADER=false;
+    // ?pw= rejected — probe the x-vela-pw header in case a newer API drops query auth
+    PW_IN_HEADER=true;
     try{ ok=(await apiFetch('/api/health',{cache:'no-store'})).ok; }catch(e){ ok=false; }
-    if(!ok) PW_IN_HEADER=true;
+    if(!ok) PW_IN_HEADER=false;
   }
   if(ok){ $('loginGate').style.display='none'; init(); }
   else { PW=''; $('loginErr').textContent='Incorrect password'; $('loginBtn').textContent='Unlock'; $('loginBtn').disabled=false; $('loginPw').value=''; $('loginPw').focus(); }
