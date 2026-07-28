@@ -308,11 +308,10 @@ const STORAGE_KEY = 'vela_finance_v3';
 const API_BASE = 'https://ncvcdvkfvgrwugkydytd.supabase.co/functions/v1/finance';
 // Password is held in memory only — never in localStorage/cookies. It arrives via the
 // login screen or a one-shot ?pw= link (scrubbed from the address bar before login).
-// Default is ?pw= query auth: the deployed edge function only accepts that, and sending
-// the x-vela-pw header first fails its CORS preflight (blocked request + console error
-// on every visit, which reads as "Supabase disconnected"). doLogin still probes the
-// header as a fallback so a redeployed API that prefers it keeps working.
-let PW = '', PW_IN_HEADER = false;
+// Sent as the x-vela-pw header (deployed 2026-07-27 with matching CORS) so the password
+// stays out of URLs and server request logs. doLogin falls back to ?pw= query auth once
+// if the header is ever rejected (e.g. an old function version gets rolled back).
+let PW = '', PW_IN_HEADER = true;
 function api(path){ return API_BASE + path + (!PW_IN_HEADER && PW ? ((path.includes('?')?'&':'?') + 'pw=' + encodeURIComponent(PW)) : ''); }
 function apiFetch(path, opts={}){ return fetch(api(path), {...opts, headers:{...(opts.headers||{}), ...(PW_IN_HEADER && PW ? {'x-vela-pw':PW} : {})}}); }
 
@@ -705,14 +704,14 @@ async function init(){
 async function doLogin(){
   const pw=$('loginPw').value; if(!pw){ $('loginErr').textContent='Enter a password'; return; }
   $('loginBtn').textContent='Checking…'; $('loginBtn').disabled=true; $('loginErr').textContent='';
-  PW=pw; PW_IN_HEADER=false;
+  PW=pw; PW_IN_HEADER=true;
   let ok=false;
   try{ ok=(await apiFetch('/api/health',{cache:'no-store'})).ok; }catch(e){ ok=false; }
   if(!ok){
-    // ?pw= rejected — probe the x-vela-pw header in case a newer API drops query auth
-    PW_IN_HEADER=true;
+    // header rejected/blocked (old function version?) — fall back to ?pw= query once
+    PW_IN_HEADER=false;
     try{ ok=(await apiFetch('/api/health',{cache:'no-store'})).ok; }catch(e){ ok=false; }
-    if(!ok) PW_IN_HEADER=false;
+    if(!ok) PW_IN_HEADER=true;
   }
   if(ok){ $('loginGate').style.display='none'; init(); }
   else { PW=''; $('loginErr').textContent='Incorrect password'; $('loginBtn').textContent='Unlock'; $('loginBtn').disabled=false; $('loginPw').value=''; $('loginPw').focus(); }
