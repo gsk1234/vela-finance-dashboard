@@ -322,6 +322,12 @@ function apiFetch(path, opts={}){ return fetch(api(path), {...opts, headers:{...
 const SEED = { cash:0, cashAccounts:[], customers:[], team:[], costs:[], pilots:[], horizon:24, vendorCategories:{} };
 
 let data, live = { mode:'local', cash:null, customers:null, actualBurn:null, asOf:null };
+// The /api/spend?trend call fans out to 6 months of Mercury transactions and takes
+// ~10-12s, during which runway/net-burn would silently fall back to modeled costs and
+// read "cash-positive / ∞ runway". Seed from the last fetch so first paint is honest.
+const TRAILING_KEY='vela_finance_trailing';
+try{ const t=JSON.parse(localStorage.getItem(TRAILING_KEY)||'null');
+  if(t && t.v!=null && Date.now()-t.at < 14*864e5){ live.trailingActual=t.v; live.trailingMonths=t.months||[]; } }catch(e){}
 let editIdx = null;
 
 function load(){ try{ const s=localStorage.getItem(STORAGE_KEY); if(s){ data=JSON.parse(s); } else { data=JSON.parse(JSON.stringify(SEED)); } }catch(e){ data=JSON.parse(JSON.stringify(SEED)); } accrueTreasury(); }
@@ -395,12 +401,14 @@ function runwayClass(m){ return m===Infinity?'good':m<6?'danger':m<18?'warn':'go
 // ── Metric cards (revenue-led) ──────────────────────────────────────────────
 function renderMetrics(){
   const m=metrics();
+  // actuals basis selected but trailing spend not fetched yet — numbers are modeled-only
+  const waiting = data.useActualBasis!==false && live.trailingActual==null;
   $('metrics').innerHTML=`
     <div class="metric-card accent"><div class="label">MRR</div><div class="value">${fmtK(m.totalRev)}</div><div class="sub">${m.activeCount} active customers</div></div>
     <div class="metric-card accent"><div class="label">ARR</div><div class="value">${fmtK(m.arr)}</div><div class="sub">recurring × 12</div></div>
     <div class="metric-card"><div class="label">Cash on hand</div><div class="value">${fmtK(m.cash)}</div><div class="sub">${live.mode==='live'?'Mercury':'op'} ${fmtK(m.opCash)} + treasury ${fmtK(m.treasury)}</div></div>
-    <div class="metric-card"><div class="label">Net burn / mo</div><div class="value">${fmt(m.netBurn)}</div><div class="sub ${m.netBurn<=0?'up':'warn'}">${m.netBurn<=0?'cash-positive':'burning'} · ${fmt(m.monthlyInterest)}/mo interest</div></div>
-    <div class="metric-card"><div class="label">Runway</div><div class="value">${months(m.runway.asis)} mo</div><div class="sub warn">floor ${months(m.runway.floor)} mo</div></div>
+    <div class="metric-card"><div class="label">Net burn / mo</div><div class="value">${waiting?'…':fmt(m.netBurn)}</div><div class="sub ${waiting?'warn':m.netBurn<=0?'up':'warn'}">${waiting?'syncing Mercury actuals…':(m.netBurn<=0?'cash-positive':'burning')+' · '+fmt(m.monthlyInterest)+'/mo interest'}</div></div>
+    <div class="metric-card"><div class="label">Runway</div><div class="value">${waiting?'…':months(m.runway.asis)+' mo'}</div><div class="sub warn">${waiting?'syncing Mercury actuals…':'floor '+months(m.runway.floor)+' mo'}</div></div>
     <div class="metric-card"><div class="label">Avg / customer</div><div class="value">${fmtK(m.arpaMean)}</div><div class="sub">median ${fmt(m.arpaMedian)}</div></div>`;
 }
 
@@ -449,7 +457,10 @@ function renderRevenue(){
 // ── Cash & runway ───────────────────────────────────────────────────────────
 function renderRunway(){
   const m=metrics();
-  $('verdict').innerHTML=`<div class="verdict alive"><div class="big">${months(m.runway.asis)} months</div><div class="small">${m.netBurn<=0?'Profitable at current revenue':'Burning '+fmt(m.netBurn)+'/mo'} · floor ${months(m.runway.floor)} mo</div></div>`;
+  const waiting = data.useActualBasis!==false && live.trailingActual==null;
+  $('verdict').innerHTML=waiting
+    ?`<div class="verdict alive"><div class="big">syncing…</div><div class="small">pulling Mercury actuals for the trailing 3-mo average</div></div>`
+    :`<div class="verdict alive"><div class="big">${months(m.runway.asis)} months</div><div class="small">${m.netBurn<=0?'Profitable at current revenue':'Burning '+fmt(m.netBurn)+'/mo'} · floor ${months(m.runway.floor)} mo</div></div>`;
   $('runwayScenarios').innerHTML=[
     ['Runway (current revenue)',m.runway.asis,'cash ÷ net burn'],
     ['Floor (revenue → $0)',m.runway.floor,'cash ÷ gross costs'],
@@ -556,12 +567,14 @@ function renderCashAccounts(){
   $('cashAccounts').innerHTML=data.cashAccounts.map((a,i)=>`
     <div class="row-inline" style="margin-bottom:2px">
       <input class="cell" style="flex:1;min-width:110px" value="${esc(a.name)}" oninput="data.cashAccounts[${i}].name=this.value;save()">
-      <input class="cell num w120" type="number" value="${a.balance}" title="balance" onchange="data.cashAccounts[${i}].asOf=new Date().toISOString().slice(0,10);save()" oninput="data.cashAccounts[${i}].balance=+this.value;renderDerived()">
-      <input class="cell num w90" type="number" step="0.1" value="${a.apy}" title="APY %" oninput="data.cashAccounts[${i}].apy=+this.value;renderDerived()"><span class="tiny">% APY</span>
+      <input class="cell num w120" type="number" value="${a.balance}" title="balance" onchange="data.cashAccounts[${i}].asOf=new Date().toISOString().slice(0,10);save();updateAcctMeta(${i})" oninput="data.cashAccounts[${i}].balance=+this.value;renderDerived();updateAcctMeta(${i})">
+      <input class="cell num w90" type="number" step="0.1" value="${a.apy}" title="APY %" oninput="data.cashAccounts[${i}].apy=+this.value;renderDerived();updateAcctMeta(${i})"><span class="tiny">% APY</span>
       <button class="btn btn-sm btn-danger" onclick="data.cashAccounts.splice(${i},1);renderAll()">×</button>
     </div>
-    <div class="tiny" style="margin-bottom:8px">↑ auto-accrues at ${a.apy}% APY · as of ${esc(a.asOf||'today')} · +${fmt((+a.balance||0)*((+a.apy||0)/100)/12)}/mo interest</div>`).join('');
+    <div class="tiny" id="acctMeta${i}" style="margin-bottom:8px">${acctMeta(a)}</div>`).join('');
 }
+function acctMeta(a){ return `↑ auto-accrues at ${a.apy}% APY · as of ${esc(a.asOf||'today')} · +${fmt((+a.balance||0)*((+a.apy||0)/100)/12)}/mo interest`; }
+function updateAcctMeta(i){ const el=$('acctMeta'+i), a=(data.cashAccounts||[])[i]; if(el&&a) el.innerHTML=acctMeta(a); }
 function addCashAccount(){ (data.cashAccounts=data.cashAccounts||[]).push({name:'New account',balance:0,apy:0}); save(); renderAll(); }
 function setCash(v){ data.cash=+v||0; renderDerived(); }
 function setHorizon(v){ data.horizon=+v||24; save(); renderForecast(); }
@@ -643,6 +656,7 @@ async function loadSpend(){
     // use recurringTotal (excludes one-time conference/legal/etc.) so a single one-off doesn't inflate burn
     live.trailingActual = last3.length ? Math.round(last3.reduce((s,t)=>s+(t.recurringTotal??t.total),0)/last3.length) : null;
     live.trailingMonths = last3.map(t=>t.month);
+    try{ localStorage.setItem(TRAILING_KEY, JSON.stringify({v:live.trailingActual, months:live.trailingMonths, at:Date.now()})); }catch(e){}
     renderSpendExplorer(); renderDerived();   // derived-only: this lands async and must not rebuild tables mid-edit
   }catch(e){ $('spendTotal').textContent='Failed to load spend'; }
 }
