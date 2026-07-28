@@ -182,7 +182,7 @@
   </div>
   <div class="card">
     <h2>Inputs &amp; cash accounts</h2>
-    <div class="field" style="margin-bottom:10px"><label>Operating cash — Mercury ($) <span class="tiny" id="cashSrc"></span></label><input id="cashInput" type="number" style="width:100%" oninput="setCash(this.value)"></div>
+    <div class="field" style="margin-bottom:10px"><label>Operating cash ($) <span class="tiny" id="cashSrc"></span></label><input id="cashInput" type="number" style="width:100%" oninput="setCash(this.value)"></div>
     <div id="cashAccounts" style="margin-bottom:10px"></div>
     <button class="btn btn-sm" style="margin-bottom:14px" onclick="addCashAccount()">+ Cash account</button>
     <div class="field" style="margin-bottom:12px"><label>Projection cost basis</label>
@@ -406,7 +406,7 @@ function renderMetrics(){
   $('metrics').innerHTML=`
     <div class="metric-card accent"><div class="label">MRR</div><div class="value">${fmtK(m.totalRev)}</div><div class="sub">${m.activeCount} active customers</div></div>
     <div class="metric-card accent"><div class="label">ARR</div><div class="value">${fmtK(m.arr)}</div><div class="sub">recurring × 12</div></div>
-    <div class="metric-card"><div class="label">Cash on hand</div><div class="value">${fmtK(m.cash)}</div><div class="sub">${live.mode==='live'?'Mercury':'op'} ${fmtK(m.opCash)} + treasury ${fmtK(m.treasury)}</div></div>
+    <div class="metric-card"><div class="label">Cash on hand</div><div class="value">${fmtK(m.cash)}</div><div class="sub">${live.mode==='live'?(live.brexCash!=null?'Mercury+Brex':'Mercury'):'op'} ${fmtK(m.opCash)} + treasury ${fmtK(m.treasury)}</div></div>
     <div class="metric-card"><div class="label">Net burn / mo</div><div class="value">${waiting?'…':fmt(m.netBurn)}</div><div class="sub ${waiting?'warn':m.netBurn<=0?'up':'warn'}">${waiting?'syncing Mercury actuals…':(m.netBurn<=0?'cash-positive':'burning')+' · '+fmt(m.monthlyInterest)+'/mo interest'}</div></div>
     <div class="metric-card"><div class="label">Runway</div><div class="value">${waiting?'…':months(m.runway.asis)+' mo'}</div><div class="sub warn">${waiting?'syncing Mercury actuals…':'floor '+months(m.runway.floor)+' mo'}</div></div>
     <div class="metric-card"><div class="label">Avg / customer</div><div class="value">${fmtK(m.arpaMean)}</div><div class="sub">median ${fmt(m.arpaMedian)}</div></div>`;
@@ -590,12 +590,14 @@ async function refreshLive(){
     const j=await apiFetch('/api/summary',{cache:'no-store'}).then(r=>r.json());
     live.mode='live';
     if(j.cash!=null) live.cash=j.cash;
+    live.mercuryCash=j.mercuryCash??null; live.brexCash=j.brexCash??null;
     if(j.actualBurn!=null) live.actualBurn=j.actualBurn;
     live.actualExcluded=j.actualExcluded??null; live.vendors=j.vendors??null;
     if(Array.isArray(j.customers)&&j.customers.length) live.customers=j.customers;
     live.asOf=j.asOf||null;
     $('modeBadge').className='mode live'; $('modeBadge').textContent='● Live · '+(j.source||'Mercury/Stripe');
-    $('cashInput').value=live.cash!=null?live.cash:data.cash; $('cashSrc').textContent=live.cash!=null?'(live)':'';
+    $('cashInput').value=live.cash!=null?live.cash:data.cash;
+    $('cashSrc').textContent=live.cash==null?'':live.brexCash!=null?'(live: Mercury '+fmtK(live.mercuryCash||0)+' + Brex '+fmtK(live.brexCash)+')':'(live · Mercury)';
     toast('Synced live data'); editing()?renderDerived():renderAll(); loadSpend();
   }catch(e){
     live.mode='local'; $('modeBadge').className='mode local'; $('modeBadge').textContent='● Local mode';
