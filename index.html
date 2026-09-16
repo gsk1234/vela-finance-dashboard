@@ -28,7 +28,7 @@
   .btn-sm { padding:5px 11px; font-size:12px; }
   .btn-danger { background:#dc2626; } .btn-danger:hover { background:#b91c1c; }
 
-  .metrics { display:grid; grid-template-columns:repeat(6,1fr); gap:14px; padding:20px 32px 6px; }
+  .metrics { display:grid; grid-template-columns:repeat(7,1fr); gap:14px; padding:20px 32px 6px; }
   .metric-card { background:var(--panel); border:1px solid var(--border); border-radius:12px; padding:16px; }
   .metric-card.accent { border-color:rgba(99,102,241,0.5); background:linear-gradient(180deg,rgba(99,102,241,0.10),var(--panel)); }
   .metric-card .label { font-size:11px; color:var(--muted); margin-bottom:6px; text-transform:uppercase; letter-spacing:0.5px; }
@@ -130,6 +130,17 @@
     <table>
       <thead><tr><th>Customer</th><th>Type</th><th class="num">MRR / mo</th><th>Start</th><th>Renewal</th><th>Status</th><th></th></tr></thead>
       <tbody id="customerTable"></tbody>
+    </table>
+  </div>
+</div>
+<div class="grid">
+  <div class="card full">
+    <h2>Contracted ARR — signed order forms <span class="hint">from DocuSign · ARR steps up automatically on committed expansion dates</span>
+      <button class="btn btn-sm" onclick="addContract()">+ Add contract</button>
+    </h2>
+    <table>
+      <thead><tr><th>Customer</th><th>Contract</th><th>Signed</th><th>Term</th><th class="num">ARR today</th><th class="num">Full ramp</th><th>Ramp / notes</th><th></th></tr></thead>
+      <tbody id="contractTable"></tbody>
     </table>
   </div>
 </div>
@@ -318,7 +329,43 @@ function apiFetch(path, opts={}){ return fetch(api(path), {...opts, headers:{...
 // Seeded from your real Mar–Jun 2026 numbers. All customers are RECURRING.
 // cash = operating cash (Mercury, overridden live). cashAccounts = other balances
 // (Palus treasury earning APY) added on top, with interest counted as income.
-const SEED = { cash:0, cashAccounts:[], customers:[], team:[], costs:[], pilots:[], horizon:24, vendorCategories:{} };
+const SEED = { cash:0, cashAccounts:[], customers:[], team:[], costs:[], pilots:[], contracts:[], horizon:24, vendorCategories:{} };
+
+// Signed contracts pulled from DocuSign (completed envelopes) on 2026-09-15.
+// `steps` = committed seat/ARR expansions written into the signed paper — "ARR today"
+// flips to the next step automatically when its date passes, no manual edit needed.
+const CONTRACTS_SEED = [
+  { name:'True Search', quote:'Q-VELA-TRS-001', signed:'2026-07-09', start:'2026-07-01', end:'2028-03-31',
+    envelope:'3292f388-1efb-8a12-821e-ab85bf340e38',
+    steps:[ {date:'2026-07-01',arr:632400,label:'62 seats'}, {date:'2026-10-01',arr:1142400,label:'112 seats'},
+            {date:'2027-01-01',arr:2162400,label:'212 seats'}, {date:'2027-04-01',arr:4080000,label:'400 seats'} ],
+    notes:'$850/seat/mo · automatic committed phase expansions, term resets 12 mo per phase, then auto-renews' },
+  { name:'Riviera Partners', quote:'Q-VELA-RIV-001', signed:'2026-05-05', start:'2026-05-05', end:'2029-05-04',
+    envelope:'4f7df8c0-5bb1-8d7c-8069-0258507fa7d9',
+    steps:[ {date:'2026-05-05',arr:432000,label:'45 seats'} ],
+    notes:'$800/seat/mo · 36-mo term, $1.296M TCV, non-cancellable, rate-locked incl. expansion' },
+  { name:'Oxeon Partners', quote:'Q-VELA-OXN-001 + Amd 1', signed:'2026-09-15', start:'2026-06-01', end:'2029-09-20',
+    envelope:'3b64864e-8511-8bd4-803f-31342ed98d1d',
+    steps:[ {date:'2026-06-01',arr:105600,label:'11 seats'}, {date:'2026-09-21',arr:153600,label:'16 seats'} ],
+    notes:'$800/seat/mo locked · Amd 1 (signed 9/15/26): term → 9/20/29, 16 seats from 9/21/26' },
+  { name:'The Elliot Group', quote:'Q-VELA-ELG-001', signed:'2026-08-05', start:'2026-08-10', end:'2027-08-09',
+    envelope:'70288605-d987-8f71-8292-11a62889f21d',
+    steps:[ {date:'2026-08-10',arr:27000,label:'3 seats'} ],
+    notes:'$750/seat/mo locked · annual in advance, auto-renews' },
+  { name:'AC Lion', quote:'Q-VELA-ACL-001', signed:'2026-08-24', start:'2026-08-24', end:'2027-08-23',
+    envelope:'1fdccdd9-d264-8c08-82c9-777c9030c46a',
+    steps:[ {date:'2026-08-24',arr:18000,label:'2 seats (mo 1)'}, {date:'2026-09-24',arr:36000,label:'4 seats'} ],
+    notes:'$750/seat/mo, 24-mo rate lock · seats auto-expand 2→4 from month 2' },
+];
+// One-time merge (by quote id) so the DocuSign seed lands in the shared store exactly once
+// and never resurrects a contract the team has deliberately deleted or edited.
+function seedContracts(){
+  data.contracts=data.contracts||[];
+  if(data.contractsSeededV1) return;
+  const have=new Set(data.contracts.map(c=>c.quote));
+  CONTRACTS_SEED.forEach(c=>{ if(!have.has(c.quote)) data.contracts.push(JSON.parse(JSON.stringify(c))); });
+  data.contractsSeededV1=true; save();
+}
 
 let data, live = { mode:'local', cash:null, customers:null, actualBurn:null, asOf:null };
 // The /api/spend?trend call fans out to 6 months of Mercury transactions and takes
@@ -329,7 +376,7 @@ try{ const t=JSON.parse(localStorage.getItem(TRAILING_KEY)||'null');
   if(t && t.v!=null && Date.now()-t.at < 14*864e5){ live.trailingActual=t.v; live.trailingMonths=t.months||[]; } }catch(e){}
 let editIdx = null;
 
-function load(){ try{ const s=localStorage.getItem(STORAGE_KEY); if(s){ data=JSON.parse(s); } else { data=JSON.parse(JSON.stringify(SEED)); } }catch(e){ data=JSON.parse(JSON.stringify(SEED)); } accrueTreasury(); }
+function load(){ try{ const s=localStorage.getItem(STORAGE_KEY); if(s){ data=JSON.parse(s); } else { data=JSON.parse(JSON.stringify(SEED)); } }catch(e){ data=JSON.parse(JSON.stringify(SEED)); } accrueTreasury(); seedContracts(); }
 // Auto-accrue: roll each interest-bearing account forward from its asOf date to today at APY.
 function accrueTreasury(){
   const today=new Date().toISOString().slice(0,10);
@@ -351,7 +398,7 @@ function pushRemote(){ if(!remoteSynced) return; clearTimeout(_pushTimer); _push
 async function loadRemote(){
   try{ const r=await apiFetch('/api/data',{cache:'no-store'}); if(!r.ok) return false;
     const j=await r.json();
-    if(j&&j.state){ data=j.state; remoteSynced=true; accrueTreasury(); return true; }  // adopt shared state
+    if(j&&j.state){ data=j.state; remoteSynced=true; accrueTreasury(); seedContracts(); return true; }  // adopt shared state
     remoteSynced=true; pushRemote(); return false;                   // store truly empty -> seed it
   }catch(e){ return false; }                                         // can't read -> stay read-only
 }
@@ -361,6 +408,17 @@ function fmt(n){ const v=Math.round(n); return (v<0?'-$':'$')+Math.abs(v).toLoca
 function fmtK(n){ const a=Math.abs(n); if(a>=1e6) return (n<0?'-$':'$')+(a/1e6).toFixed(2)+'M'; if(a>=1e3) return (n<0?'-$':'$')+(a/1e3).toFixed(1)+'k'; return fmt(n); }
 function months(m){ return m===Infinity?'∞':m>=600?'600+':m.toFixed(1); }
 function toast(m){ const t=$('toast'); t.textContent=m; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2000); }
+
+// ── Contracted ARR (signed order forms) ─────────────────────────────────────
+function contractArrAt(c,d){ const st=c.steps||[]; if(!st.length) return 0;
+  let v=st[0].arr; st.forEach(s=>{ if(s.date<=d) v=+s.arr||0; }); return v; }   // signed-not-started counts at its first step
+function contractedArr(){
+  const today=new Date().toISOString().slice(0,10);
+  const cs=(data.contracts||[]).filter(c=>!(c.end&&c.end<today));               // expired contracts drop out automatically
+  return { now: cs.reduce((s,c)=>s+contractArrAt(c,today),0),
+           full: cs.reduce((s,c)=>{ const st=c.steps||[]; return s+(st.length?+st[st.length-1].arr||0:0); },0),
+           count: cs.length };
+}
 
 // ── Core finance math ──────────────────────────────────────────────────────
 function metrics(){
@@ -399,12 +457,13 @@ function runwayClass(m){ return m===Infinity?'good':m<6?'danger':m<18?'warn':'go
 
 // ── Metric cards (revenue-led) ──────────────────────────────────────────────
 function renderMetrics(){
-  const m=metrics();
+  const m=metrics(); const ca=contractedArr();
   // actuals basis selected but trailing spend not fetched yet — numbers are modeled-only
   const waiting = data.useActualBasis!==false && live.trailingActual==null;
   $('metrics').innerHTML=`
     <div class="metric-card accent"><div class="label">MRR</div><div class="value">${fmtK(m.totalRev)}</div><div class="sub">${m.activeCount} active customers</div></div>
     <div class="metric-card accent"><div class="label">ARR</div><div class="value">${fmtK(m.arr)}</div><div class="sub">recurring × 12</div></div>
+    <div class="metric-card accent"><div class="label">Contracted ARR</div><div class="value">${fmtK(ca.now)}</div><div class="sub">${ca.count} signed · ${fmtK(ca.full)} full ramp</div></div>
     <div class="metric-card"><div class="label">Cash on hand</div><div class="value">${fmtK(m.cash)}</div><div class="sub">${live.mode==='live'?(live.brexCash!=null?'Mercury+Brex':'Mercury'):'op'} ${fmtK(m.opCash)} + treasury ${fmtK(m.treasury)}</div></div>
     <div class="metric-card"><div class="label">Net burn / mo</div><div class="value">${waiting?'…':fmt(m.netBurn)}</div><div class="sub ${waiting?'warn':m.netBurn<=0?'up':'warn'}">${waiting?'syncing Mercury actuals…':(m.netBurn<=0?'cash-positive':'burning')+' · '+fmt(m.monthlyInterest)+'/mo interest'}</div></div>
     <div class="metric-card"><div class="label">Runway</div><div class="value">${waiting?'…':months(m.runway.asis)+' mo'}</div><div class="sub warn">${waiting?'syncing Mercury actuals…':'floor '+months(m.runway.floor)+' mo'}</div></div>
@@ -605,9 +664,10 @@ async function refreshLive(){
 }
 
 // ── Slack digest ─────────────────────────────────────────────────────────────
-function slackDigest(){ const m=metrics();
+function slackDigest(){ const m=metrics(); const ca=contractedArr();
   return `*Vela finance — ${new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}*
 • MRR: ${fmtK(m.totalRev)}  |  ARR: ${fmtK(m.arr)}  |  ${m.activeCount} active customers
+• Contracted ARR: ${fmtK(ca.now)} (${ca.count} signed · ${fmtK(ca.full)} at full ramp)
 • Cash: ${fmtK(m.cash)}  |  Net burn: ${fmt(m.netBurn)}/mo  |  Runway: ${months(m.runway.asis)} mo (floor ${months(m.runway.floor)})`; }
 function openSlack(){ $('slackText').textContent=slackDigest(); openModal('slackModal'); }
 function copySlack(){ navigator.clipboard.writeText(slackDigest()); toast('Copied'); }
@@ -638,6 +698,33 @@ function renderPilots(){
     :`<tr><td colspan="7" class="tiny">No pilots yet. Add one to track who's piloting, what they're paying, and the dates.</td></tr>`;
 }
 function addPilot(){ data.pilots=data.pilots||[]; data.pilots.push({name:'New pilot',monthly:0,start:new Date().toISOString().slice(0,10),end:'',status:'active',notes:''}); renderPilots(); save(); }
+
+// ── Contracted ARR table (signed order forms from DocuSign) ─────────────────
+function renderContracts(){
+  data.contracts=data.contracts||[];
+  const today=new Date().toISOString().slice(0,10); const ca=contractedArr();
+  $('contractTable').innerHTML=(data.contracts.length?data.contracts.map((c,i)=>{
+    const st=c.steps||[]; const nowArr=contractArrAt(c,today); const fullArr=st.length?+st[st.length-1].arr||0:0;
+    const expired=c.end&&c.end<today; const multi=st.length>1;
+    const ramp=multi?st.map(s=>`${s.date.slice(2)} · ${s.label||fmtK(s.arr)} → ${fmtK(s.arr)}`).join('\n'):'';
+    return `<tr${expired?' style="opacity:.45"':''}>
+      <td style="font-weight:500;color:#fff"><input class="cell" value="${esc(c.name)}" oninput="data.contracts[${i}].name=this.value;save()"></td>
+      <td class="tiny" title="DocuSign envelope ${esc(c.envelope||'—')}">${esc(c.quote||'—')}</td>
+      <td><input class="cell" type="date" value="${esc(c.signed||'')}" oninput="data.contracts[${i}].signed=this.value;save()"></td>
+      <td class="tiny"><input class="cell" type="date" style="width:118px" value="${esc(c.start||'')}" oninput="data.contracts[${i}].start=this.value;save()"> → <input class="cell" type="date" style="width:118px" value="${esc(c.end||'')}" onchange="data.contracts[${i}].end=this.value;save();renderMetrics();renderContracts()"></td>
+      <td class="num" style="font-weight:600;color:#fff">${multi
+        ?`<span title="${esc(ramp)}" style="cursor:help;border-bottom:1px dotted #444">${fmt(nowArr)}</span>`
+        :`<input class="cell num" type="number" style="width:110px" value="${st.length?st[0].arr:0}" oninput="(data.contracts[${i}].steps=data.contracts[${i}].steps&&data.contracts[${i}].steps.length?data.contracts[${i}].steps:[{date:data.contracts[${i}].start||'${today}',arr:0}])[0].arr=+this.value;save();renderMetrics()">`}</td>
+      <td class="num">${fmt(fullArr)}</td>
+      <td><input class="cell" value="${esc(c.notes||'')}" placeholder="—" oninput="data.contracts[${i}].notes=this.value;save()"></td>
+      <td class="num"><button class="btn btn-sm btn-danger" onclick="delContract(${i})">×</button></td></tr>`;
+  }).join(''):`<tr><td colspan="8" class="tiny">No signed contracts yet.</td></tr>`)
+  +`<tr><td colspan="4" style="font-weight:600;color:#fff">Total contracted</td>
+     <td class="num" style="font-weight:700;color:#fff">${fmt(ca.now)}</td>
+     <td class="num" style="font-weight:700;color:#a5b4fc">${fmt(ca.full)}</td><td colspan="2" class="tiny">steps up automatically on committed dates</td></tr>`;
+}
+function addContract(){ (data.contracts=data.contracts||[]).push({name:'New contract',quote:'',signed:new Date().toISOString().slice(0,10),start:new Date().toISOString().slice(0,10),end:'',steps:[{date:new Date().toISOString().slice(0,10),arr:0}],notes:''}); save(); renderContracts(); renderMetrics(); }
+function delContract(i){ data.contracts.splice(i,1); save(); renderContracts(); renderMetrics(); }
 
 // ── Spend explorer (actuals from Mercury via backend) ───────────────────────
 const SPEND_CATS=['Payroll','Contractors','Rent','Infra/AI','Software/SaaS','Marketing','Travel','Meals','AMEX card','Fees','Other','Excluded'];
@@ -684,7 +771,7 @@ function exportSpendCSV(){ if(!spend)return; const rows=[['Date','Payee','Catego
   const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'})); a.download='vela-spend-'+spend.month+'.csv'; a.click(); toast('Exported'); }
 
 // ── Master render ────────────────────────────────────────────────────────────
-function renderAll(){ save(); renderMetrics(); renderCashAccounts(); renderRevenue(); renderPilots(); renderRunway(); renderForecast(); renderBurn(); renderTables(); renderScenario(); renderEfficiency(); }
+function renderAll(){ save(); renderMetrics(); renderCashAccounts(); renderRevenue(); renderContracts(); renderPilots(); renderRunway(); renderForecast(); renderBurn(); renderTables(); renderScenario(); renderEfficiency(); }
 // Everything EXCEPT the editable tables — safe to call from oninput while typing.
 function renderDerived(){ save(); renderMetrics(); renderRunway(); renderForecast(); renderBurn(); renderScenario(); renderEfficiency(); }
 
@@ -696,7 +783,7 @@ async function init(){
   $('cashInput').value=data.cash; $('horizonInput').value=data.horizon||24;
   $('spendMonth').value=defaultSpendMonth();
   $('costBasis').value=(data.useActualBasis===false)?'plan':'actual';
-  $('footnote').innerHTML='Shared source of truth for Vela cash, revenue &amp; burn — edits sync for the whole team via Supabase. All customers recurring (ARR = MRR × 12). Live cash/burn from Mercury. Hit “↻ Sync live” to pull teammates’ latest changes.';
+  $('footnote').innerHTML='Shared source of truth for Vela cash, revenue &amp; burn — edits sync for the whole team via Supabase. All customers recurring (ARR = MRR × 12). Contracted ARR comes from signed DocuSign order forms (with committed expansion steps applied by date); ARR is the live billing run-rate — they will differ during ramps. Live cash/burn from Mercury. Hit “↻ Sync live” to pull teammates’ latest changes.';
   renderAll();
   refreshLive();
 }
