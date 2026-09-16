@@ -351,20 +351,33 @@ const CONTRACTS_SEED = [
     envelope:'1fdccdd9-d264-8c08-82c9-777c9030c46a',
     steps:[ {date:'2026-08-24',arr:36000,label:'4 seats'} ], tcv:36000,
     notes:'4 seats @ $750/seat/mo (2 seats month 1) · 24-mo rate lock' },
+  { name:'Paragon Legal', quote:'Rev 2.3 (2/6/26)', signed:'2026-02-06', start:'2026-02-06', end:'2027-02-06',
+    envelope:'c795eff2-af94-41b4-ade1-0ff7942662c5',
+    steps:[ {date:'2026-02-06',arr:9600} ], tcv:9600,
+    notes:'$800/mo · annual, signed via DocuSign (Tracy Scanlan), renews 2/6/27' },
+  { name:'FirstLook Partners', quote:'Rev 2.3 (2/17/26)', signed:'2026-02-17', start:'2026-02-16', end:'2027-02-15',
+    envelope:'31c69410-388b-4b36-8996-d9dada3d178a',
+    steps:[ {date:'2026-02-16',arr:7200,label:'2 seats'} ], tcv:7200,
+    notes:'2 seats @ $300/seat/mo · annual term, billed semi-annually' },
+  { name:'Celine Teoh', quote:'Annual (email)', signed:'', start:'2026-03-01', end:'2027-02-28',
+    envelope:'',
+    steps:[ {date:'2026-03-01',arr:3000,label:'1 seat'} ], tcv:3000,
+    notes:'1 seat · $250/mo · annual commitment, no DocuSign envelope' },
 ];
 // One-time upsert (by quote id) so the DocuSign seed lands in the shared store exactly once
 // and never resurrects a contract the team has deliberately deleted or edited.
 // V2: True Search (Q-VELA-TRS-001) deal died — remove it wherever a V1 seed left it.
+// V3: add the annual deals signed pre-order-form era (Paragon, FirstLook, Celine).
 function seedContracts(){
   data.contracts=data.contracts||[];
-  if(data.contractsSeededV2) return;
+  if(data.contractsSeededV3) return;
   data.contracts=data.contracts.filter(c=>c.quote!=='Q-VELA-TRS-001');
   CONTRACTS_SEED.forEach(sc=>{
     const i=data.contracts.findIndex(c=>c.quote===sc.quote);
     if(i>=0) data.contracts[i]=JSON.parse(JSON.stringify(sc));
     else data.contracts.push(JSON.parse(JSON.stringify(sc)));
   });
-  data.contractsSeededV2=true; save();
+  data.contractsSeededV2=true; data.contractsSeededV3=true; save();
 }
 
 let data, live = { mode:'local', cash:null, customers:null, actualBurn:null, asOf:null };
