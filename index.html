@@ -50,6 +50,9 @@
   td { padding:9px 10px; border-bottom:1px solid var(--line); font-size:13px; }
   td.num, th.num { text-align:right; font-variant-numeric:tabular-nums; }
   tr:hover td { background:#1a1a28; }
+  tr.crow td { border-bottom:none; padding-bottom:3px; }
+  tr.note-row td { padding-top:0; }
+  tr.note-row .note-lbl { color:#6b6b80; font-size:10px; text-transform:uppercase; letter-spacing:0.5px; white-space:nowrap; }
   .tag { display:inline-block; padding:2px 9px; border-radius:20px; font-size:11px; font-weight:500; }
   .tag.active { background:rgba(34,197,94,0.15); color:var(--green); }
   .tag.churned { background:rgba(239,68,68,0.15); color:var(--red); }
@@ -139,7 +142,7 @@
       <button class="btn btn-sm" onclick="addContract()">+ Add contract</button>
     </h2>
     <table>
-      <thead><tr><th>Customer</th><th>Contract</th><th>Signed</th><th>Term</th><th class="num">ARR</th><th class="num">TCV</th><th>Notes</th><th></th></tr></thead>
+      <thead><tr><th>Customer</th><th>Contract</th><th>Signed</th><th>Term</th><th>Renews</th><th class="num">ARR</th><th class="num">TCV</th><th></th></tr></thead>
       <tbody id="contractTable"></tbody>
     </table>
   </div>
@@ -335,31 +338,31 @@ const SEED = { cash:0, cashAccounts:[], customers:[], team:[], costs:[], pilots:
 // ARR = committed seats extrapolated to a year; TCV = total value over the contracted term
 // (equal to ARR for annual deals). `steps` supports future date-based ramps if needed.
 const CONTRACTS_SEED = [
-  { name:'Riviera Partners', quote:'Q-VELA-RIV-001', signed:'2026-05-05', start:'2026-05-05', end:'2029-05-04',
+  { name:'Riviera Partners', quote:'Q-VELA-RIV-001', signed:'2026-05-05', start:'2026-05-05', end:'2029-05-04', renew:'2029-05-04',
     envelope:'4f7df8c0-5bb1-8d7c-8069-0258507fa7d9',
     steps:[ {date:'2026-05-05',arr:432000,label:'45 seats'} ], tcv:1296000,
-    notes:'45 seats @ $800/seat/mo · 36-mo term, non-cancellable, rate-locked incl. expansion' },
-  { name:'Oxeon Partners', quote:'Q-VELA-OXN-001 + Amd 1', signed:'2026-09-15', start:'2026-06-01', end:'2029-09-20',
+    notes:'45 seats @ $800/seat/mo · 36-mo term, non-cancellable, rate-locked incl. expansion seats' },
+  { name:'Oxeon Partners', quote:'Q-VELA-OXN-001 + Amd 1', signed:'2026-09-15', start:'2026-06-01', end:'2029-09-20', renew:'2029-09-20',
     envelope:'3b64864e-8511-8bd4-803f-31342ed98d1d',
     steps:[ {date:'2026-06-01',arr:153600,label:'16 seats'} ], tcv:460800,
-    notes:'16 seats @ $800/seat/mo locked (Amd 1 signed 9/15/26: 11→16 seats, term → 9/20/29 = 36 mo)' },
-  { name:'The Elliot Group', quote:'Q-VELA-ELG-001', signed:'2026-08-05', start:'2026-08-10', end:'2027-08-09',
+    notes:'16 seats @ $800/seat/mo locked (Amd 1 signed 9/15/26: 11→16 seats, term → 9/20/29) · may drop 2 seats 9/21/27 and 9/21/28 w/ 30-day notice · auto-renews 12-mo, 30-day non-renewal notice (by 8/21/29)' },
+  { name:'The Elliot Group', quote:'Q-VELA-ELG-001', signed:'2026-08-05', start:'2026-08-10', end:'2027-08-09', renew:'2027-08-09',
     envelope:'70288605-d987-8f71-8292-11a62889f21d',
     steps:[ {date:'2026-08-10',arr:27000,label:'3 seats'} ], tcv:27000,
-    notes:'3 seats @ $750/seat/mo locked · annual in advance, auto-renews' },
-  { name:'AC Lion', quote:'Q-VELA-ACL-001', signed:'2026-08-24', start:'2026-08-24', end:'2027-08-23',
+    notes:'3 seats @ $750/seat/mo locked · annual in advance · auto-renews, 30-day non-renewal notice (by 7/10/27)' },
+  { name:'AC Lion', quote:'Q-VELA-ACL-001', signed:'2026-08-24', start:'2026-08-24', end:'2027-08-23', renew:'2027-08-23',
     envelope:'1fdccdd9-d264-8c08-82c9-777c9030c46a',
     steps:[ {date:'2026-08-24',arr:36000,label:'4 seats'} ], tcv:36000,
-    notes:'4 seats @ $750/seat/mo (2 seats month 1) · 24-mo rate lock' },
-  { name:'Paragon Legal', quote:'Rev 2.3 (2/6/26)', signed:'2026-02-06', start:'2026-02-06', end:'2027-02-06',
+    notes:'4 seats @ $750/seat/mo (2 seats month 1) · auto-renews, 30-day non-renewal notice (by 7/24/27) · rate locked through first renewal' },
+  { name:'Paragon Legal', quote:'Rev 2.3 (2/6/26)', signed:'2026-02-06', start:'2026-02-06', end:'2027-02-06', renew:'2027-02-06',
     envelope:'c795eff2-af94-41b4-ade1-0ff7942662c5',
     steps:[ {date:'2026-02-06',arr:9600} ], tcv:9600,
-    notes:'$800/mo · annual, signed via DocuSign (Tracy Scanlan), renews 2/6/27' },
-  { name:'FirstLook Partners', quote:'Rev 2.3 (2/17/26)', signed:'2026-02-17', start:'2026-02-16', end:'2027-02-15',
+    notes:'$800/mo · annual, signed via DocuSign (Tracy Scanlan) · renews 2/6/27' },
+  { name:'FirstLook Partners', quote:'Rev 2.3 (2/17/26)', signed:'2026-02-17', start:'2026-02-16', end:'2027-02-15', renew:'2027-02-15',
     envelope:'31c69410-388b-4b36-8996-d9dada3d178a',
     steps:[ {date:'2026-02-16',arr:7200,label:'2 seats'} ], tcv:7200,
     notes:'2 seats @ $300/seat/mo · annual term, billed semi-annually' },
-  { name:'Celine Teoh', quote:'Annual (email)', signed:'', start:'2026-03-01', end:'2027-02-28',
+  { name:'Celine Teoh', quote:'Annual (email)', signed:'', start:'2026-03-01', end:'2027-02-28', renew:'2027-02-28',
     envelope:'',
     steps:[ {date:'2026-03-01',arr:3000,label:'1 seat'} ], tcv:3000,
     notes:'1 seat · $250/mo · annual commitment, no DocuSign envelope' },
@@ -368,16 +371,17 @@ const CONTRACTS_SEED = [
 // and never resurrects a contract the team has deliberately deleted or edited.
 // V2: True Search (Q-VELA-TRS-001) deal died — remove it wherever a V1 seed left it.
 // V3: add the annual deals signed pre-order-form era (Paragon, FirstLook, Celine).
+// V4: renewal dates + notice-window notes on every contract.
 function seedContracts(){
   data.contracts=data.contracts||[];
-  if(data.contractsSeededV3) return;
+  if(data.contractsSeededV4) return;
   data.contracts=data.contracts.filter(c=>c.quote!=='Q-VELA-TRS-001');
   CONTRACTS_SEED.forEach(sc=>{
     const i=data.contracts.findIndex(c=>c.quote===sc.quote);
     if(i>=0) data.contracts[i]=JSON.parse(JSON.stringify(sc));
     else data.contracts.push(JSON.parse(JSON.stringify(sc)));
   });
-  data.contractsSeededV2=true; data.contractsSeededV3=true; save();
+  data.contractsSeededV2=true; data.contractsSeededV3=true; data.contractsSeededV4=true; save();
 }
 
 let data, live = { mode:'local', cash:null, customers:null, actualBurn:null, asOf:null };
@@ -512,8 +516,20 @@ function renderRevProjection(){
 function renderRevenue(){
   const h=buildMrrHistory(); drawLine('mrrTrendChart',h.map(x=>x.label),h.map(x=>x.mrr));
   renderRevProjection();
-  const cust=(live.customers||data.customers).filter(c=>c.status==='active'&&c.renew).sort((a,b)=>new Date(a.renew)-new Date(b.renew));
-  $('renewals').innerHTML=cust.length?cust.slice(0,7).map(c=>`<div class="runway-row"><div class="lbl">${esc(c.name)}<small>${esc(c.renew)}</small></div><div class="v">${fmtK(+c.mrr)}</div></div>`).join('')
+  // Renewals: signed contracts first (renew date, annualized value), then any customer
+  // rows with a renew date whose name isn't already covered by a contract.
+  const today=new Date().toISOString().slice(0,10);
+  const items=(data.contracts||[]).filter(c=>{const d=c.renew||c.end; return d&&d>=today;})
+    .map(c=>({name:c.name,date:c.renew||c.end,val:fmtK(contractArrAt(c,today))+'/yr'}));
+  const cnames=(data.contracts||[]).map(c=>(c.name||'').toLowerCase());
+  (live.customers||data.customers).filter(c=>c.status==='active'&&c.renew&&c.renew>=today).forEach(c=>{
+    const n=(c.name||'').toLowerCase();
+    if(cnames.some(cn=>cn&&(cn.includes(n)||n.includes(cn)))) return;
+    items.push({name:c.name,date:c.renew,val:fmtK(+c.mrr)+'/mo'});
+  });
+  items.sort((a,b)=>a.date<b.date?-1:1);
+  const daysOut=d=>Math.round((new Date(d)-new Date(today))/864e5);
+  $('renewals').innerHTML=items.length?items.slice(0,8).map(r=>`<div class="runway-row"><div class="lbl">${esc(r.name)}<small>${esc(r.date)} · in ${daysOut(r.date)}d</small></div><div class="v">${r.val}</div></div>`).join('')
     :`<div class="tiny">No renewal dates set. Add them on your larger contracts to track when revenue is up for renewal.</div>`;
   const cs=(live.customers||data.customers);
   $('customerTable').innerHTML=cs.map((c,i)=>`
@@ -720,23 +736,25 @@ function renderContracts(){
     const st=c.steps||[]; const nowArr=contractArrAt(c,today);
     const expired=c.end&&c.end<today; const multi=st.length>1;
     const ramp=multi?st.map(s=>`${s.date.slice(2)} · ${s.label||fmtK(s.arr)} → ${fmtK(s.arr)}`).join('\n'):'';
-    return `<tr${expired?' style="opacity:.45"':''}>
+    const dim=expired?' style="opacity:.45"':'';
+    return `<tr class="crow"${dim}>
       <td style="font-weight:500;color:#fff"><input class="cell" value="${esc(c.name)}" oninput="data.contracts[${i}].name=this.value;save()"></td>
       <td class="tiny" title="DocuSign envelope ${esc(c.envelope||'—')}">${esc(c.quote||'—')}</td>
       <td><input class="cell" type="date" value="${esc(c.signed||'')}" oninput="data.contracts[${i}].signed=this.value;save()"></td>
-      <td class="tiny"><input class="cell" type="date" style="width:118px" value="${esc(c.start||'')}" oninput="data.contracts[${i}].start=this.value;save()"> → <input class="cell" type="date" style="width:118px" value="${esc(c.end||'')}" onchange="data.contracts[${i}].end=this.value;save();renderMetrics();renderContracts()"></td>
+      <td class="tiny"><input class="cell" type="date" style="width:118px" value="${esc(c.start||'')}" oninput="data.contracts[${i}].start=this.value;save()"> → <input class="cell" type="date" style="width:118px" value="${esc(c.end||'')}" onchange="data.contracts[${i}].end=this.value;save();renderMetrics();renderContracts();renderRevenue()"></td>
+      <td><input class="cell" type="date" style="width:118px" value="${esc(c.renew||c.end||'')}" onchange="data.contracts[${i}].renew=this.value;save();renderContracts();renderRevenue()"></td>
       <td class="num" style="font-weight:600;color:#fff">${multi
         ?`<span title="${esc(ramp)}" style="cursor:help;border-bottom:1px dotted #444">${fmt(nowArr)}</span>`
         :`<input class="cell num" type="number" style="width:110px" value="${st.length?st[0].arr:0}" oninput="(data.contracts[${i}].steps=data.contracts[${i}].steps&&data.contracts[${i}].steps.length?data.contracts[${i}].steps:[{date:data.contracts[${i}].start||'${today}',arr:0}])[0].arr=+this.value;save();renderMetrics()">`}</td>
       <td class="num"><input class="cell num" type="number" style="width:110px" value="${+c.tcv||nowArr}" oninput="data.contracts[${i}].tcv=+this.value;save();renderMetrics()"></td>
-      <td><input class="cell" value="${esc(c.notes||'')}" placeholder="—" oninput="data.contracts[${i}].notes=this.value;save()"></td>
-      <td class="num"><button class="btn btn-sm btn-danger" onclick="delContract(${i})">×</button></td></tr>`;
+      <td class="num"><button class="btn btn-sm btn-danger" onclick="delContract(${i})">×</button></td></tr>
+    <tr class="note-row"${dim}><td colspan="8"><div style="display:flex;gap:10px;align-items:center"><span class="note-lbl">Notes</span><input class="cell" style="flex:1" value="${esc(c.notes||'')}" placeholder="deal notes — payment terms, notice windows, expansion rights…" oninput="data.contracts[${i}].notes=this.value;save()"></div></td></tr>`;
   }).join(''):`<tr><td colspan="8" class="tiny">No signed contracts yet.</td></tr>`)
-  +`<tr><td colspan="4" style="font-weight:600;color:#fff">Total contracted</td>
+  +`<tr><td colspan="5" style="font-weight:600;color:#fff">Total contracted</td>
      <td class="num" style="font-weight:700;color:#fff">${fmt(ca.now)}</td>
-     <td class="num" style="font-weight:700;color:#a5b4fc">${fmt(ca.tcv)}</td><td colspan="2" class="tiny">expired contracts drop out automatically</td></tr>`;
+     <td class="num" style="font-weight:700;color:#a5b4fc">${fmt(ca.tcv)}</td><td class="tiny"></td></tr>`;
 }
-function addContract(){ (data.contracts=data.contracts||[]).push({name:'New contract',quote:'',signed:new Date().toISOString().slice(0,10),start:new Date().toISOString().slice(0,10),end:'',steps:[{date:new Date().toISOString().slice(0,10),arr:0}],tcv:0,notes:''}); save(); renderContracts(); renderMetrics(); }
+function addContract(){ (data.contracts=data.contracts||[]).push({name:'New contract',quote:'',signed:new Date().toISOString().slice(0,10),start:new Date().toISOString().slice(0,10),end:'',renew:'',steps:[{date:new Date().toISOString().slice(0,10),arr:0}],tcv:0,notes:''}); save(); renderContracts(); renderMetrics(); }
 function delContract(i){ data.contracts.splice(i,1); save(); renderContracts(); renderMetrics(); }
 
 // ── Spend explorer (actuals from Mercury via backend) ───────────────────────
