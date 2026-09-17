@@ -53,6 +53,11 @@
   tr.crow td { border-bottom:none; padding-bottom:3px; }
   tr.note-row td { padding-top:0; }
   tr.note-row .note-lbl { color:#6b6b80; font-size:10px; text-transform:uppercase; letter-spacing:0.5px; white-space:nowrap; }
+  th.sortable { cursor:pointer; user-select:none; white-space:nowrap; }
+  th.sortable:hover { color:#fff; }
+  th.sortable .arr { opacity:.45; font-size:10px; margin-left:4px; }
+  th.sortable.on { color:#fff; } th.sortable.on .arr { opacity:1; color:#a5b4fc; }
+  td.soon { color:#fbbf24; } td .dim { color:#6b6b80; font-size:10.5px; }
   .tag { display:inline-block; padding:2px 9px; border-radius:20px; font-size:11px; font-weight:500; }
   .tag.active { background:rgba(34,197,94,0.15); color:var(--green); }
   .tag.churned { background:rgba(239,68,68,0.15); color:var(--red); }
@@ -131,7 +136,7 @@
       <button class="btn btn-sm" onclick="addCustomer()">+ Add customer</button>
     </h2>
     <table>
-      <thead><tr><th>Customer</th><th>Type</th><th class="num">MRR / mo</th><th>Start</th><th>Renewal</th><th>Status</th><th></th></tr></thead>
+      <thead><tr id="customerHead"></tr></thead>
       <tbody id="customerTable"></tbody>
     </table>
   </div>
@@ -142,7 +147,7 @@
       <button class="btn btn-sm" onclick="addContract()">+ Add contract</button>
     </h2>
     <table>
-      <thead><tr><th>Customer</th><th>Contract</th><th>Signed</th><th>Term</th><th>Renews</th><th class="num">ARR</th><th class="num">TCV</th><th></th></tr></thead>
+      <thead><tr id="contractHead"></tr></thead>
       <tbody id="contractTable"></tbody>
     </table>
   </div>
@@ -289,7 +294,7 @@
     <div class="form-group"><label>Type</label><select id="cType"><option value="recurring">Recurring (subscription → counts to ARR)</option><option value="services">Services / retainer (excluded from ARR)</option></select></div>
     <div class="form-group"><label>Monthly amount ($)</label><input id="cMrr" type="number"></div>
     <div class="form-group"><label>Start date</label><input id="cDate" type="date"></div>
-    <div class="form-group"><label>Renewal date (optional)</label><input id="cRenew" type="date"></div>
+    <div class="form-group"><label>Renewal</label><input id="cRenew" placeholder="YYYY-MM-DD · Monthly · or e.g. Opt-out by 2027-02-18"><div class="tiny" style="margin-top:4px">A date, “Monthly” for month-to-month, or free text. The first YYYY-MM-DD found is what the renewals panel tracks. Leave blank to inherit from the matching signed contract.</div></div>
     <div class="form-group"><label>Status</label><select id="cStatus"><option value="active">Active</option><option value="trial">Trial</option><option value="churned">Churned</option></select></div>
     <div class="modal-actions"><button class="btn-ghost" onclick="closeModal('custModal')">Cancel</button><button class="btn" onclick="saveCustomer()">Save</button></div>
   </div>
@@ -367,7 +372,7 @@ const CONTRACTS_SEED = [
     envelope:'',
     steps:[ {date:'2026-03-01',arr:3000,label:'1 seat'} ], tcv:3000,
     notes:'1 seat · $250/mo · annual commitment, no DocuSign envelope' },
-  { name:'Talengo', quote:'Q-VELA-TLG-002', signed:'2026-09-17', start:'2026-09-21', end:'2027-09-20', renew:'2027-09-20',
+  { name:'Talengo', quote:'Q-VELA-TLG-002', signed:'2026-09-17', start:'2026-09-21', end:'2027-09-20', renew:'2027-09-20', optout:'2027-02-18',
     envelope:'059fe712-c66b-8ad1-81d6-e5c3eb70a82d',
     steps:[ {date:'2026-09-21',arr:19382,label:'3 coordinator seats'} ], tcv:19382,
     notes:'€1,400/mo flat (€16,800/yr ≈ $19.4k @ ECB 1.1537 on 9/16/26) · 3 coordinator seats, unlimited consultants/projects · billed 2 × €8,400; €7,900 due on signing (€600 pilot credit), €8,400 invoiced 3/21/27 · opt-out by 2/18/27 ends term 3/20/27 · auto-renews 12-mo, 30-day non-renewal notice (by 8/21/27) · signed by Mayte Martinez 9/17/26, Vela countersign pending' },
@@ -397,11 +402,54 @@ function seedContracts(){
     // Mirror the deal into the customer list that drives MRR / revenue projections.
     data.customers=data.customers||[];
     if(!data.customers.some(c=>(c.name||'').toLowerCase().includes('talengo')))
-      data.customers.push({name:'Talengo',type:'recurring',mrr:1615,date:'2026-09-21',renew:'2027-09-20',status:'active'});
+      data.customers.push({name:'Talengo',type:'recurring',mrr:1615,date:'2026-09-21',renew:'Opt-out by 2027-02-18 · renews 2027-09-20',status:'active'});
     data.contractsSeededV5=true; dirty=true;
+  }
+  // V6: fill every customer's Renewal — inherit the matching signed contract's date, flag opt-outs,
+  //     and mark month-to-month subscriptions "Monthly". Never overwrites a value someone typed.
+  if(!data.contractsSeededV6){
+    const t=(data.contracts||[]).find(c=>c.quote==='Q-VELA-TLG-002'); if(t&&!t.optout) t.optout='2027-02-18';
+    (data.customers||[]).forEach(c=>{
+      const k=contractFor(c.name);
+      if(k&&k.optout&&(!c.renew||c.renew===(k.renew||k.end))) c.renew='Opt-out by '+k.optout+' · renews '+(k.renew||k.end);
+      else if(c.renew) return;
+      else if(k&&(k.renew||k.end)) c.renew=k.renew||k.end;
+      else if(c.type!=='services') c.renew='Monthly';
+    });
+    data.contractsSeededV6=true; dirty=true;
   }
   if(dirty) save();
 }
+
+// ── Renewal helpers ──────────────────────────────────────────────────────────
+function norm(s){ return String(s||'').toLowerCase().replace(/[^a-z0-9]/g,''); }
+function contractFor(name){ const n=norm(name); if(!n) return null;
+  return (data.contracts||[]).find(c=>{ const cn=norm(c.name); return cn&&(cn.includes(n)||n.includes(cn)); })||null; }
+function renewDate(v){ const m=/(\d{4}-\d{2}-\d{2})/.exec(String(v||'')); return m?m[1]:''; }   // first date in a free-text renewal
+function customerRenewal(c){ if(c.renew) return c.renew; const k=contractFor(c.name);
+  if(k&&k.optout) return 'Opt-out by '+k.optout+' · renews '+(k.renew||k.end); if(k&&(k.renew||k.end)) return k.renew||k.end;
+  return c.type==='services'?'':'Monthly'; }
+function daysOut(d){ const today=new Date().toISOString().slice(0,10); return Math.round((new Date(d)-new Date(today))/864e5); }
+function daysCell(d){ if(!d) return ''; const n=daysOut(d); return `<br><span class="dim">${n<0?Math.abs(n)+'d ago':'in '+n+'d'}</span>`; }
+function soonCls(d){ if(!d) return ''; const n=daysOut(d); return n>=0&&n<=90?' soon':''; }
+
+// ── Table sorting (click a header: asc → desc → original order; remembered per browser) ──
+const SORT_KEY='vela_finance_sort'; let sortState={};
+try{ sortState=JSON.parse(localStorage.getItem(SORT_KEY)||'{}')||{}; }catch(e){ sortState={}; }
+function setSort(table,key){ const s=sortState[table];
+  sortState[table]= s&&s.key===key ? (s.dir==='asc'?{key,dir:'desc'}:null) : {key,dir:'asc'};
+  try{ localStorage.setItem(SORT_KEY,JSON.stringify(sortState)); }catch(e){}
+  if(table==='customers') renderRevenue(); else renderContracts(); }
+function sortedIdx(table,arr,getters){ const s=sortState[table]; const idx=arr.map((_,i)=>i);
+  if(!s||!getters[s.key]) return idx; const g=getters[s.key];
+  idx.sort((a,b)=>{ let va=g(arr[a]),vb=g(arr[b]); const ea=va==null||va==='', eb=vb==null||vb==='';
+    if(ea&&eb) return a-b; if(ea) return 1; if(eb) return -1;                       // blanks always last
+    if(typeof va==='string'){ va=va.toLowerCase(); vb=String(vb).toLowerCase(); }
+    const c=va<vb?-1:va>vb?1:a-b; return s.dir==='asc'?c:-c; });
+  return idx; }
+function sortTh(table,key,label,cls=''){ const s=sortState[table]; const on=s&&s.key===key;
+  if(!key) return `<th class="${cls}"></th>`;
+  return `<th class="sortable ${cls}${on?' on':''}" onclick="setSort('${table}','${key}')" title="Sort by ${esc(label)}">${label}<span class="arr">${on?(s.dir==='asc'?'▲':'▼'):'↕'}</span></th>`; }
 
 let data, live = { mode:'local', cash:null, customers:null, actualBurn:null, asOf:null };
 // The /api/spend?trend call fans out to 6 months of Mercury transactions and takes
@@ -538,26 +586,35 @@ function renderRevenue(){
   // Renewals: signed contracts first (renew date, annualized value), then any customer
   // rows with a renew date whose name isn't already covered by a contract.
   const today=new Date().toISOString().slice(0,10);
-  const items=(data.contracts||[]).filter(c=>{const d=c.renew||c.end; return d&&d>=today;})
-    .map(c=>({name:c.name,date:c.renew||c.end,val:fmtK(contractArrAt(c,today))+'/yr'}));
-  const cnames=(data.contracts||[]).map(c=>(c.name||'').toLowerCase());
-  (live.customers||data.customers).filter(c=>c.status==='active'&&c.renew&&c.renew>=today).forEach(c=>{
-    const n=(c.name||'').toLowerCase();
-    if(cnames.some(cn=>cn&&(cn.includes(n)||n.includes(cn)))) return;
-    items.push({name:c.name,date:c.renew,val:fmtK(+c.mrr)+'/mo'});
+  const items=[];
+  (data.contracts||[]).forEach(c=>{ const d=c.renew||c.end; const v=fmtK(contractArrAt(c,today))+'/yr';
+    if(d&&d>=today) items.push({name:c.name,date:d,val:v});
+    if(c.optout&&c.optout>=today) items.push({name:c.name+' — opt-out deadline',date:c.optout,val:v}); });
+  (live.customers||data.customers).filter(c=>c.status==='active').forEach(c=>{
+    if(contractFor(c.name)) return;                                   // already covered by its signed contract
+    const d=renewDate(c.renew); if(d&&d>=today) items.push({name:c.name,date:d,val:fmtK(+c.mrr)+'/mo'});
   });
   items.sort((a,b)=>a.date<b.date?-1:1);
-  const daysOut=d=>Math.round((new Date(d)-new Date(today))/864e5);
   $('renewals').innerHTML=items.length?items.slice(0,8).map(r=>`<div class="runway-row"><div class="lbl">${esc(r.name)}<small>${esc(r.date)} · in ${daysOut(r.date)}d</small></div><div class="v">${r.val}</div></div>`).join('')
     :`<div class="tiny">No renewal dates set. Add them on your larger contracts to track when revenue is up for renewal.</div>`;
   const cs=(live.customers||data.customers);
-  $('customerTable').innerHTML=cs.map((c,i)=>`
+  $('customerHead').innerHTML=sortTh('customers','name','Customer')+sortTh('customers','type','Type')+sortTh('customers','mrr','MRR / mo','num')
+    +sortTh('customers','date','Start')+sortTh('customers','renew','Renewal')+sortTh('customers','status','Status')+sortTh('customers','','');
+  const order=sortedIdx('customers',cs,{ name:c=>c.name, type:c=>c.type||'recurring', mrr:c=>+c.mrr||0, date:c=>c.date||'',
+    renew:c=>renewDate(customerRenewal(c)), status:c=>c.status });   // 'Monthly' has no date → always sorts last
+  const totalMrr=cs.filter(c=>c.status==='active'&&c.type!=='services').reduce((s,c)=>s+(+c.mrr||0),0);
+  const nActive=cs.filter(c=>c.status==='active'&&c.type!=='services').length;
+  $('customerTable').innerHTML=order.map(i=>{ const c=cs[i]; const rv=customerRenewal(c), rd=renewDate(rv), k=contractFor(c.name);
+    return `
     <tr><td style="font-weight:500;color:#fff">${esc(c.name)}</td>
     <td><span class="tag ${c.type==='services'?'services':'recurring'}" style="cursor:pointer" onclick="toggleType(${i})">${c.type==='services'?'Services':'Recurring'}</span></td>
     <td class="num" style="font-weight:600;color:#fff">${fmt(+c.mrr)}</td>
-    <td class="tiny">${esc(c.date||'')}</td><td class="tiny">${esc(c.renew||'—')}</td>
+    <td class="tiny">${esc(c.date||'')}</td>
+    <td class="tiny${c.status==='active'?soonCls(rd):''}" title="${k?'Signed contract '+esc(k.quote):(rd?'':'Month-to-month')}">${esc(rv||'—')}${c.status==='active'?daysCell(rd):''}</td>
     <td><span class="tag ${c.status}">${c.status[0].toUpperCase()+c.status.slice(1)}</span></td>
-    <td class="num"><button class="btn btn-sm" onclick="editCustomer(${i})">Edit</button> <button class="btn btn-sm btn-danger" onclick="delCustomer(${i})">×</button></td></tr>`).join('');
+    <td class="num"><button class="btn btn-sm" onclick="editCustomer(${i})">Edit</button> <button class="btn btn-sm btn-danger" onclick="delCustomer(${i})">×</button></td></tr>`; }).join('')
+    +`<tr><td colspan="2" style="font-weight:600;color:#fff">Total active MRR</td><td class="num" style="font-weight:700;color:#fff">${fmt(totalMrr)}</td>
+       <td colspan="4" class="tiny">${nActive} active recurring · ${fmtK(totalMrr*12)} ARR · services excluded</td></tr>`;
 }
 
 // ── Cash & runway ───────────────────────────────────────────────────────────
@@ -751,7 +808,11 @@ function addPilot(){ data.pilots=data.pilots||[]; data.pilots.push({name:'New pi
 function renderContracts(){
   data.contracts=data.contracts||[];
   const today=new Date().toISOString().slice(0,10); const ca=contractedArr();
-  $('contractTable').innerHTML=(data.contracts.length?data.contracts.map((c,i)=>{
+  $('contractHead').innerHTML=sortTh('contracts','name','Customer')+sortTh('contracts','quote','Contract')+sortTh('contracts','signed','Signed')
+    +sortTh('contracts','start','Term')+sortTh('contracts','renew','Renews')+sortTh('contracts','arr','ARR','num')+sortTh('contracts','tcv','TCV','num')+sortTh('contracts','','');
+  const order=sortedIdx('contracts',data.contracts,{ name:c=>c.name, quote:c=>c.quote, signed:c=>c.signed||'', start:c=>c.start||'',
+    renew:c=>c.renew||c.end||'', arr:c=>contractArrAt(c,today), tcv:c=>+c.tcv||contractArrAt(c,today) });
+  $('contractTable').innerHTML=(data.contracts.length?order.map(i=>{ const c=data.contracts[i];
     const st=c.steps||[]; const nowArr=contractArrAt(c,today);
     const expired=c.end&&c.end<today; const multi=st.length>1;
     const ramp=multi?st.map(s=>`${s.date.slice(2)} · ${s.label||fmtK(s.arr)} → ${fmtK(s.arr)}`).join('\n'):'';
@@ -761,7 +822,7 @@ function renderContracts(){
       <td class="tiny" title="DocuSign envelope ${esc(c.envelope||'—')}">${esc(c.quote||'—')}</td>
       <td><input class="cell" type="date" value="${esc(c.signed||'')}" oninput="data.contracts[${i}].signed=this.value;save()"></td>
       <td class="tiny"><input class="cell" type="date" style="width:118px" value="${esc(c.start||'')}" oninput="data.contracts[${i}].start=this.value;save()"> → <input class="cell" type="date" style="width:118px" value="${esc(c.end||'')}" onchange="data.contracts[${i}].end=this.value;save();renderMetrics();renderContracts();renderRevenue()"></td>
-      <td><input class="cell" type="date" style="width:118px" value="${esc(c.renew||c.end||'')}" onchange="data.contracts[${i}].renew=this.value;save();renderContracts();renderRevenue()"></td>
+      <td class="tiny${expired?'':soonCls(c.renew||c.end)}"><input class="cell" type="date" style="width:118px" value="${esc(c.renew||c.end||'')}" onchange="data.contracts[${i}].renew=this.value;save();renderContracts();renderRevenue()">${expired?'':daysCell(c.renew||c.end)}${c.optout?`<br><span class="dim${soonCls(c.optout)}" title="Customer may opt out with notice by this date">opt-out by ${esc(c.optout)}</span>`:''}</td>
       <td class="num" style="font-weight:600;color:#fff">${multi
         ?`<span title="${esc(ramp)}" style="cursor:help;border-bottom:1px dotted #444">${fmt(nowArr)}</span>`
         :`<input class="cell num" type="number" style="width:110px" value="${st.length?st[0].arr:0}" oninput="(data.contracts[${i}].steps=data.contracts[${i}].steps&&data.contracts[${i}].steps.length?data.contracts[${i}].steps:[{date:data.contracts[${i}].start||'${today}',arr:0}])[0].arr=+this.value;save();renderMetrics()">`}</td>
