@@ -378,8 +378,8 @@ const CONTRACTS_SEED = [
     notes:'€1,400/mo flat (€16,800/yr ≈ $19.4k @ ECB 1.1537 on 9/16/26) · 3 coordinator seats, unlimited consultants/projects · billed 2 × €8,400; €7,900 due on signing (€600 pilot credit), €8,400 invoiced 3/21/27 · opt-out by 2/18/27 ends term 3/20/27 · auto-renews 12-mo, 30-day non-renewal notice (by 8/21/27) · signed by Mayte Martinez 9/17/26, Vela countersign pending' },
   { name:'NU Advisory Partners', quote:'Q-VELA-NUA-001', signed:'2026-09-25', start:'2026-09-25', end:'2027-09-24', renew:'2027-09-24',
     envelope:'19C79296-BAC3-8FCB-8138-98685F6307A8',
-    steps:[ {date:'2026-09-25',arr:138000,label:'23 seats @ $500'}, {date:'2026-12-25',arr:207000,label:'23 seats @ $750 (on milestones)'} ], tcv:189750,
-    notes:'23 seats (partners + APs) · $500/seat/mo months 1-3, $750/seat/mo months 4-12 once the 6 Success Milestones are accepted (30-day acceptance window; $500 continues until accepted) · quarterly in advance, Net 30: Q1 $34,500 due on signing, Q2-Q4 $51,750 each at $750 rate ($34,500 if milestones still in progress → TCV floor $138k) · $5k onboarding + 20% support plan waived (Strategic Partner) · NO auto-renew: Vela must reach out ≥60 days before end (by 7/26/27); renewal rate capped at $787.50/seat · added seats at then-current rate, co-terminous · Jared Cohen (COO) signed 9/25/26, billing ops@nusearch.com' },
+    steps:[ {date:'2026-09-25',arr:207000,label:'23 seats @ $750'} ], tcv:189750,
+    notes:'23 seats (partners + APs) @ $750/seat/mo contracted (ARR = 23 × $750 × 12) · intro $500/seat/mo months 1-3, $750 from month 4 once the 6 Success Milestones are accepted (30-day acceptance window; $500 continues until accepted) · quarterly in advance, Net 30: Q1 $34,500 due on signing, Q2-Q4 $51,750 each at $750 rate ($34,500 if milestones still in progress → TCV floor $138k) · $5k onboarding + 20% support plan waived (Strategic Partner) · NO auto-renew: Vela must reach out ≥60 days before end (by 7/26/27); renewal rate capped at $787.50/seat · added seats at then-current rate, co-terminous · Jared Cohen (COO) signed 9/25/26, billing ops@nusearch.com' },
 ];
 // One-time upsert (by quote id) so the DocuSign seed lands in the shared store exactly once
 // and never resurrects a contract the team has deliberately deleted or edited.
@@ -389,7 +389,7 @@ const CONTRACTS_SEED = [
 // V5: Talengo (Q-VELA-TLG-002, signed 9/17/26) — upserts ONLY the new contract so edits the
 //     team has made to existing rows since V4 are left alone.
 // V7: NU Advisory Partners (Q-VELA-NUA-001, signed 9/25/26) — same upsert-only-the-new-row pattern.
-//     Two ARR steps: $138k at the $500 intro rate, $207k from 12/25/26 when the $750 rate is in effect.
+//     ARR at the contracted $750 rate (23 × $750 × 12 = $207k) per Gobhanu; $500 intro rate is a note only.
 function upsertContract(sc){
   const i=data.contracts.findIndex(c=>c.quote===sc.quote);
   if(i>=0) data.contracts[i]=JSON.parse(JSON.stringify(sc));
@@ -428,7 +428,7 @@ function seedContracts(){
     CONTRACTS_SEED.filter(c=>c.quote==='Q-VELA-NUA-001').forEach(upsertContract);
     data.customers=data.customers||[];
     if(!data.customers.some(c=>norm(c.name).includes('nuadvisory')||norm(c.name).includes('nusearch')))
-      data.customers.push({name:'NU Advisory Partners',type:'recurring',mrr:11500,date:'2026-09-25',renew:'2027-09-24',status:'active'});
+      data.customers.push({name:'NU Advisory Partners',type:'recurring',mrr:17250,date:'2026-09-25',renew:'2027-09-24',status:'active'});
     data.contractsSeededV7=true; dirty=true;
   }
   if(dirty) save();
