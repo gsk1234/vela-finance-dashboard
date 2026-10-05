@@ -379,8 +379,8 @@ const CONTRACTS_SEED = [
     notes:'€1,400/mo flat (€16,800/yr ≈ $19.4k @ ECB 1.1537 on 9/16/26) · 3 coordinator seats, unlimited consultants/projects · billed 2 × €8,400; €7,900 due on signing (€600 pilot credit), €8,400 invoiced 3/21/27 · opt-out by 2/18/27 ends term 3/20/27 · auto-renews 12-mo, 30-day non-renewal notice (by 8/21/27) · signed by Mayte Martinez 9/17/26, Vela countersign pending' },
   { name:'NU Advisory Partners', quote:'Q-VELA-NUA-001', signed:'2026-09-25', start:'2026-09-25', end:'2027-09-24', renew:'2027-09-24',
     envelope:'19C79296-BAC3-8FCB-8138-98685F6307A8',
-    steps:[ {date:'2026-09-25',arr:207000,label:'23 seats @ $750'} ], tcv:189750,
-    notes:'23 seats (partners + APs) @ $750/seat/mo contracted (ARR = 23 × $750 × 12) · intro $500/seat/mo months 1-3, $750 from month 4 once the 6 Success Milestones are accepted (30-day acceptance window; $500 continues until accepted) · quarterly in advance, Net 30: Q1 $34,500 due on signing, Q2-Q4 $51,750 each at $750 rate ($34,500 if milestones still in progress → TCV floor $138k) · $5k onboarding + 20% support plan waived (Strategic Partner) · NO auto-renew: Vela must reach out ≥60 days before end (by 7/26/27); renewal rate capped at $787.50/seat · added seats at then-current rate, co-terminous · Jared Cohen (COO) signed 9/25/26, billing ops@nusearch.com' },
+    steps:[ {date:'2026-09-25',arr:207000,label:'23 seats @ $750'}, {date:'2026-10-05',arr:225000,label:'+2 seats → 25 @ $750'} ], tcv:189750,
+    notes:'25 seats as of 10/5/26 (+2 added, co-terminous) · 23 seats (partners + APs) @ $750/seat/mo contracted (ARR = 23 × $750 × 12) · intro $500/seat/mo months 1-3, $750 from month 4 once the 6 Success Milestones are accepted (30-day acceptance window; $500 continues until accepted) · quarterly in advance, Net 30: Q1 $34,500 due on signing, Q2-Q4 $51,750 each at $750 rate ($34,500 if milestones still in progress → TCV floor $138k) · $5k onboarding + 20% support plan waived (Strategic Partner) · NO auto-renew: Vela must reach out ≥60 days before end (by 7/26/27); renewal rate capped at $787.50/seat · added seats at then-current rate, co-terminous · Jared Cohen (COO) signed 9/25/26, billing ops@nusearch.com' },
   { name:'The Talent Studios', quote:'Q-VELA-TTS-001', signed:'2026-09-30', start:'2026-09-30', end:'2027-09-29', renew:'2027-09-29', optout:'2026-12-29',
     envelope:'d277bf8d-95b2-8544-83c7-6b4a70e6bafd',
     steps:[ {date:'2026-09-30',arr:22800,label:'2 seats @ $950'} ], tcv:22800,
@@ -449,7 +449,7 @@ function seedContracts(){
   if(!data.contractsSeededV9){
     const SEATS={ rivierapartners:45, oxeon:16, theelliotgroup:3, aclion:4, firstlookpartners:2, celine:1, talengo:3,
       nuadvisorypartners:25, thetalentstudios:2, david:1, arielzamir:1, james:1, sharadfablemedia:1,
-      stevenatvoyageouraccess:1, oliverbogler:1 };
+      stevenatvoyageouraccess:1, oliverbogler:1, paragon:8, wye:2, gcai:2, aiirconsulting:1 };
     (data.customers||[]).forEach(c=>{ const n=SEATS[norm(c.name)]; if(n&&!c.seats) c.seats=n; });
     data.contractsSeededV9=true; dirty=true;
   }
