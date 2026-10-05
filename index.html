@@ -293,6 +293,7 @@
     <div class="form-group"><label>Name</label><input id="cName"></div>
     <div class="form-group"><label>Type</label><select id="cType"><option value="recurring">Recurring (subscription → counts to ARR)</option><option value="services">Services / retainer (excluded from ARR)</option></select></div>
     <div class="form-group"><label>Monthly amount ($)</label><input id="cMrr" type="number"></div>
+    <div class="form-group"><label>Seats purchased</label><input id="cSeats" type="number" min="0" step="1" placeholder="e.g. 16"><div class="tiny" style="margin-top:4px">Vela seats on the order form. Per-seat price = monthly amount ÷ seats.</div></div>
     <div class="form-group"><label>Start date</label><input id="cDate" type="date"></div>
     <div class="form-group"><label>Renewal</label><input id="cRenew" placeholder="YYYY-MM-DD · Monthly · or e.g. Opt-out by 2027-02-18"><div class="tiny" style="margin-top:4px">A date, “Monthly” for month-to-month, or free text. The first YYYY-MM-DD found is what the renewals panel tracks. Leave blank to inherit from the matching signed contract.</div></div>
     <div class="form-group"><label>Status</label><select id="cStatus"><option value="active">Active</option><option value="trial">Trial</option><option value="churned">Churned</option></select></div>
@@ -443,6 +444,15 @@ function seedContracts(){
       data.customers.push({name:'The Talent Studios',type:'recurring',mrr:1900,date:'2026-09-30',renew:'Opt-out by 2026-12-29 · renews 2027-09-29',status:'active'});
     data.contractsSeededV8=true; dirty=true;
   }
+  // V9: seats purchased per customer (from signed order forms; single-user plans = 1 seat).
+  //     Fills blanks only — never overwrites a seat count someone typed.
+  if(!data.contractsSeededV9){
+    const SEATS={ rivierapartners:45, oxeon:16, theelliotgroup:3, aclion:4, firstlookpartners:2, celine:1, talengo:3,
+      nuadvisorypartners:25, thetalentstudios:2, david:1, arielzamir:1, james:1, sharadfablemedia:1,
+      stevenatvoyageouraccess:1, oliverbogler:1 };
+    (data.customers||[]).forEach(c=>{ const n=SEATS[norm(c.name)]; if(n&&!c.seats) c.seats=n; });
+    data.contractsSeededV9=true; dirty=true;
+  }
   if(dirty) save();
 }
 
@@ -454,6 +464,7 @@ function renewDate(v){ const m=/(\d{4}-\d{2}-\d{2})/.exec(String(v||'')); return
 function customerRenewal(c){ if(c.renew) return c.renew; const k=contractFor(c.name);
   if(k&&k.optout) return 'Opt-out by '+k.optout+' · renews '+(k.renew||k.end); if(k&&(k.renew||k.end)) return k.renew||k.end;
   return c.type==='services'?'':'Monthly'; }
+function perSeat(c){ const n=+c.seats; return n>0?(+c.mrr||0)/n:0; }
 function daysOut(d){ const today=new Date().toISOString().slice(0,10); return Math.round((new Date(d)-new Date(today))/864e5); }
 function daysCell(d){ if(!d) return ''; const n=daysOut(d); return `<br><span class="dim">${n<0?Math.abs(n)+'d ago':'in '+n+'d'}</span>`; }
 function soonCls(d){ if(!d) return ''; const n=daysOut(d); return n>=0&&n<=90?' soon':''; }
@@ -623,22 +634,28 @@ function renderRevenue(){
   $('renewals').innerHTML=items.length?items.slice(0,8).map(r=>`<div class="runway-row"><div class="lbl">${esc(r.name)}<small>${esc(r.date)} · in ${daysOut(r.date)}d</small></div><div class="v">${r.val}</div></div>`).join('')
     :`<div class="tiny">No renewal dates set. Add them on your larger contracts to track when revenue is up for renewal.</div>`;
   const cs=(live.customers||data.customers);
-  $('customerHead').innerHTML=sortTh('customers','name','Customer')+sortTh('customers','type','Type')+sortTh('customers','mrr','MRR / mo','num')
+  $('customerHead').innerHTML=sortTh('customers','name','Customer')+sortTh('customers','type','Type')+sortTh('customers','mrr','MRR / mo','num')+sortTh('customers','seats','Seats','num')+sortTh('customers','perSeat','Per seat / mo','num')
     +sortTh('customers','date','Start')+sortTh('customers','renew','Renewal')+sortTh('customers','status','Status')+sortTh('customers','','');
-  const order=sortedIdx('customers',cs,{ name:c=>c.name, type:c=>c.type||'recurring', mrr:c=>+c.mrr||0, date:c=>c.date||'',
+  const order=sortedIdx('customers',cs,{ name:c=>c.name, type:c=>c.type||'recurring', mrr:c=>+c.mrr||0, seats:c=>+c.seats||'', perSeat:c=>perSeat(c)||'', date:c=>c.date||'',
     renew:c=>renewDate(customerRenewal(c)), status:c=>c.status });   // 'Monthly' has no date → always sorts last
   const totalMrr=cs.filter(c=>c.status==='active'&&c.type!=='services').reduce((s,c)=>s+(+c.mrr||0),0);
+  const seated=cs.filter(c=>c.status==='active'&&c.type!=='services'&&+c.seats>0);
+  const totalSeats=seated.reduce((s,c)=>s+(+c.seats),0), seatedMrr=seated.reduce((s,c)=>s+(+c.mrr||0),0);
   const nActive=cs.filter(c=>c.status==='active'&&c.type!=='services').length;
   $('customerTable').innerHTML=order.map(i=>{ const c=cs[i]; const rv=customerRenewal(c), rd=renewDate(rv), k=contractFor(c.name);
     return `
     <tr><td style="font-weight:500;color:#fff">${esc(c.name)}</td>
     <td><span class="tag ${c.type==='services'?'services':'recurring'}" style="cursor:pointer" onclick="toggleType(${i})">${c.type==='services'?'Services':'Recurring'}</span></td>
     <td class="num" style="font-weight:600;color:#fff">${fmt(+c.mrr)}</td>
+    <td class="num">${+c.seats>0?(+c.seats).toLocaleString():'<span class="dim">—</span>'}</td>
+    <td class="num">${perSeat(c)?fmt(perSeat(c)):'<span class="dim">—</span>'}</td>
     <td class="tiny">${esc(c.date||'')}</td>
     <td class="tiny${c.status==='active'?soonCls(rd):''}" title="${k?'Signed contract '+esc(k.quote):(rd?'':'Month-to-month')}">${esc(rv||'—')}${c.status==='active'?daysCell(rd):''}</td>
     <td><span class="tag ${c.status}">${c.status[0].toUpperCase()+c.status.slice(1)}</span></td>
     <td class="num"><button class="btn btn-sm" onclick="editCustomer(${i})">Edit</button> <button class="btn btn-sm btn-danger" onclick="delCustomer(${i})">×</button></td></tr>`; }).join('')
     +`<tr><td colspan="2" style="font-weight:600;color:#fff">Total active MRR</td><td class="num" style="font-weight:700;color:#fff">${fmt(totalMrr)}</td>
+       <td class="num" style="font-weight:700;color:#fff">${totalSeats.toLocaleString()}</td>
+       <td class="num" style="font-weight:600;color:#fff" title="Blended: MRR of customers with seat counts ÷ their seats">${totalSeats?fmt(seatedMrr/totalSeats):'—'}</td>
        <td colspan="4" class="tiny">${nActive} active recurring · ${fmtK(totalMrr*12)} ARR · services excluded</td></tr>`;
 }
 
@@ -743,9 +760,9 @@ function drawDoughnut(id,labels,d,colors){ if(!window.Chart)return; destroy(id);
     options:{responsive:true,animation:false,plugins:{legend:{position:'bottom',labels:{color:textc,padding:12,boxWidth:12,font:{size:11}}}}}}); }
 
 // ── Customer CRUD ────────────────────────────────────────────────────────────
-function addCustomer(){ editIdx=null; $('custModalTitle').textContent='Add customer'; ['cName','cMrr','cRenew'].forEach(id=>$(id).value=''); $('cType').value='recurring'; $('cDate').value=new Date().toISOString().split('T')[0]; $('cStatus').value='active'; openModal('custModal'); }
-function editCustomer(i){ const c=data.customers[i]; editIdx=i; $('custModalTitle').textContent='Edit customer'; $('cName').value=c.name; $('cType').value=c.type||'recurring'; $('cMrr').value=c.mrr; $('cDate').value=c.date||''; $('cRenew').value=c.renew||''; $('cStatus').value=c.status; openModal('custModal'); }
-function saveCustomer(){ const c={name:$('cName').value.trim(),type:$('cType').value,mrr:+$('cMrr').value||0,date:$('cDate').value,renew:$('cRenew').value,status:$('cStatus').value}; if(!c.name)return; if(editIdx!=null) data.customers[editIdx]=c; else data.customers.push(c); save(); closeModal('custModal'); renderAll(); }
+function addCustomer(){ editIdx=null; $('custModalTitle').textContent='Add customer'; ['cName','cMrr','cSeats','cRenew'].forEach(id=>$(id).value=''); $('cType').value='recurring'; $('cDate').value=new Date().toISOString().split('T')[0]; $('cStatus').value='active'; openModal('custModal'); }
+function editCustomer(i){ const c=data.customers[i]; editIdx=i; $('custModalTitle').textContent='Edit customer'; $('cName').value=c.name; $('cType').value=c.type||'recurring'; $('cMrr').value=c.mrr; $('cSeats').value=c.seats||''; $('cDate').value=c.date||''; $('cRenew').value=c.renew||''; $('cStatus').value=c.status; openModal('custModal'); }
+function saveCustomer(){ const c={name:$('cName').value.trim(),type:$('cType').value,mrr:+$('cMrr').value||0,seats:+$('cSeats').value||0,date:$('cDate').value,renew:$('cRenew').value,status:$('cStatus').value}; if(!c.name)return; if(editIdx!=null) data.customers[editIdx]=c; else data.customers.push(c); save(); closeModal('custModal'); renderAll(); }
 function delCustomer(i){ data.customers.splice(i,1); save(); renderAll(); }
 function toggleType(i){ const c=data.customers[i]; c.type=c.type==='services'?'recurring':'services'; save(); renderAll(); }
 function addTeam(){ data.team.push({name:'New hire',role:'',monthly:0}); save(); renderAll(); }
