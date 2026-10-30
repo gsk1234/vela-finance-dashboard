@@ -385,6 +385,10 @@ const CONTRACTS_SEED = [
     envelope:'d277bf8d-95b2-8544-83c7-6b4a70e6bafd',
     steps:[ {date:'2026-09-30',arr:22800,label:'2 seats @ $950'} ], tcv:22800,
     notes:'2 seats @ $950/seat/mo (ARR = 2 × $950 × 12, per Gobhanu 10/1/26) · 12-mo term 9/30/26–9/29/27, quarterly in advance, Net 30 · Q1 review / opt-out at end of Q1 (12/29/26): expand to 4 seats, stay <4 seats at a higher rate, or exit · onboarding + support plan waived · $250 pilot credit applied to Q1 · ⚠ Stripe Q1 invoice VVD8S9EG-0001 ($4,850, open) and HubSpot deal were booked at $850/seat — reconcile against the signed order form · Kelli Vukelic (COO) signed 9/30/26, billing ap@talentstudios.com' },
+  { name:'ES Leaders', quote:'Q-VELA-ESL-001', signed:'2026-10-30', start:'2026-10-30', end:'2027-10-29', renew:'2027-10-29',
+    envelope:'BB6520A8-0AED-87C5-816E-A1B93D717F44',
+    steps:[ {date:'2026-10-30',arr:6000,label:'1 seat'} ], tcv:6000,
+    notes:'1 platform license @ $500/mo flat, no usage metering · 12-mo term from Service Start (assumed 10/30/26 signing date) · $6,000/yr billed 2 × $3,000: installment 1 on execution, installment 2 at start of month 7, Net 7, non-refundable · UK customer: no UK VAT charged, reverse-charge · extra users at then-current per-seat rate, prorated + co-terminous · auto-renews 12-mo at then-current seat count, 30-day non-renewal notice (by 9/29/27) · marketing reference permitted · Executive Search Leaders Limited, signed by Nick Workman (Managing Partner) + Gobhanu 10/30/26' },
 ];
 // One-time upsert (by quote id) so the DocuSign seed lands in the shared store exactly once
 // and never resurrects a contract the team has deliberately deleted or edited.
@@ -459,6 +463,14 @@ function seedContracts(){
     CONTRACTS_SEED.filter(c=>c.quote==='Q-VELA-RIV-001 + A1').forEach(upsertContract);
     (data.customers||[]).forEach(c=>{ if(norm(c.name)==='rivierapartners'){ c.mrr=44000; c.seats=55; } });
     data.contractsSeededV10=true; dirty=true;
+  }
+  // V11: ES Leaders (Q-VELA-ESL-001, signed 10/30/26) — 1 seat @ $500/mo, $6k ARR.
+  if(!data.contractsSeededV11){
+    CONTRACTS_SEED.filter(c=>c.quote==='Q-VELA-ESL-001').forEach(upsertContract);
+    data.customers=data.customers||[];
+    if(!data.customers.some(c=>norm(c.name).includes('esleaders')||norm(c.name).includes('executivesearchleaders')))
+      data.customers.push({name:'ES Leaders',type:'recurring',mrr:500,date:'2026-10-30',renew:'2027-10-29',seats:1,status:'active'});
+    data.contractsSeededV11=true; dirty=true;
   }
   if(dirty) save();
 }
