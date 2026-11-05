@@ -196,7 +196,7 @@
     <div id="runwayScenarios"></div>
   </div>
   <div class="card">
-    <h2>Cash-flow forecast <span class="hint">projected balance</span></h2>
+    <h2>Cash-flow forecast <span class="hint">projected balance · customer cash on billing schedule</span></h2>
     <canvas id="forecastChart"></canvas>
   </div>
   <div class="card">
@@ -297,6 +297,7 @@
     <div class="form-group"><label>Start date</label><input id="cDate" type="date"></div>
     <div class="form-group"><label>Renewal</label><input id="cRenew" placeholder="YYYY-MM-DD · Monthly · or e.g. Opt-out by 2027-02-18"><div class="tiny" style="margin-top:4px">A date, “Monthly” for month-to-month, or free text. The first YYYY-MM-DD found is what the renewals panel tracks. Leave blank to inherit from the matching signed contract.</div></div>
     <div class="form-group"><label>Status</label><select id="cStatus"><option value="active">Active</option><option value="trial">Trial</option><option value="churned">Churned</option></select></div>
+    <div class="form-group"><label>End date (churned)</label><input id="cEnded" type="date"><div class="tiny" style="margin-top:4px">Last day they paid. Keeps a churned customer in the revenue trend up to this date.</div></div>
     <div class="modal-actions"><button class="btn-ghost" onclick="closeModal('custModal')">Cancel</button><button class="btn" onclick="saveCustomer()">Save</button></div>
   </div>
 </div>
@@ -478,6 +479,29 @@ function seedContracts(){
     (data.customers||[]).forEach(c=>{ if(norm(c.name)==='nuadvisorypartners'){ c.mrr=21000; c.seats=28; } });
     data.contractsSeededV12=true; data.contractsSeededV13=true; dirty=true;
   }
+  // V14: billing schedules for the cash-flow forecast (next expected cash date, USD per invoice, months between
+  //      invoices), from each order form's billing terms. Net-30/Net-7 terms are folded into `next`.
+  //      Also Oxeon's pre-amendment history: 11 seats @ $800 until Amd 1 (9/15/26), so the revenue trend is right.
+  if(!data.contractsSeededV14){
+    const BILLING={
+      'Q-VELA-RIV-001 + A1':{ next:'2026-11-05', amount:132000, every:3, note:'quarterly in advance, 55 × $800 × 3' },
+      'Q-VELA-OXN-001 + Amd 1':{ next:'2026-12-01', amount:40800, every:3, note:'quarterly (Stripe, Matt Stansky) · 17 × $800 × 3',
+        extra:[{date:'2026-11-20',amount:9333,note:'open Stripe invoice: Amd 1 proration 10/1–12/1'}] },
+      'Q-VELA-NUA-001':     { next:'2027-01-24', amount:63000,  every:3, note:'Q2 invoiced 12/25 Net 30 · 28 × $750 × 3 assumes milestones accepted ($42k at $500)',
+        extra:[{date:'2026-11-20',amount:34500,note:'Q1 invoice open since 9/28 (overdue)'},{date:'2026-12-20',amount:4054,note:'draft: added-seat proration 11/17–12/23'}] },
+      'Q-VELA-TTS-001':     { next:'2027-01-29', amount:5100,   every:3, note:'Q2 invoiced 12/30 Net 30 · billed at $850/seat (Stripe), opt-out 12/29',
+        extra:[{date:'2026-11-20',amount:4850,note:'Q1 invoice open since 10/1 (overdue)'}] },
+      'Q-VELA-TLG-002':     { next:'2027-03-28', amount:9691,   every:6, note:'€8,400 invoiced 3/21 Net 7 @ 1.1537' },
+      'Q-VELA-ESL-001':     { next:'2027-05-07', amount:3000,   every:6, note:'installment 2 at month 7, Net 7',
+        extra:[{date:'2026-11-12',amount:3000,note:'installment 1 open since 10/20'}] },
+      'Q-VELA-ELG-001':     { next:'2027-08-10', amount:27000,  every:12, note:'annual in advance' },
+      'Rev 2.3 (2/17/26)':  { next:'2027-03-09', amount:3600,   every:6, note:'semi-annual, last period 9/9–3/9' },
+      'Annual (email)':     { next:'2027-03-01', amount:3000,   every:12, note:'annual' } };
+    (data.contracts||[]).forEach(c=>{ const b=BILLING[c.quote]; if(b&&!c.billing) c.billing=b;
+      if(c.quote==='Q-VELA-OXN-001 + Amd 1'&&(c.steps||[]).length===1&&c.steps[0].date==='2026-06-01')
+        c.steps=[{arr:105600,date:'2026-05-13',label:'11 seats'},{arr:153600,date:'2026-09-15',label:'Amd 1: 16 seats'}]; });
+    data.contractsSeededV14=true; dirty=true;
+  }
   if(dirty) save();
 }
 
@@ -616,11 +640,20 @@ function renderMetrics(){
 }
 
 // ── Revenue: customers, projection, trend, renewals ─────────────────────────
+// MRR at a past date. Rows only hold today's price, so a contracted customer's row is scaled by its contract's
+// ARR then vs now (Riviera $36k before A1, NU's seat steps). Churned rows count until their end date.
+function mrrAt(c,d){
+  if(!c.date||c.date>d||c.type==='services') return 0;
+  if(c.status==='churned'){ if(!c.ended||c.ended<=d) return 0; } else if(c.status!=='active') return 0;
+  const k=contractFor(c.name), today=new Date().toISOString().slice(0,10);
+  if(k&&c.status==='active'){ const now=contractArrAt(k,today); if(now) return (+c.mrr||0)*contractArrAt(k,d)/now; }
+  return +c.mrr||0;
+}
 function buildMrrHistory(){
-  const cust=(live.customers||data.customers); const out=[]; const now=new Date();
-  for(let i=5;i>=0;i--){ const m=new Date(now.getFullYear(),now.getMonth()-i,1); const end=new Date(m.getFullYear(),m.getMonth()+1,0);
-    const mrr=cust.filter(c=>(c.status==='active')&&new Date(c.date)<=end).reduce((s,c)=>s+(+c.mrr||0),0);
-    out.push({label:m.toLocaleDateString('en-US',{month:'short',year:'2-digit'}),mrr}); }
+  const cust=(live.customers||data.customers); const out=[]; const now=new Date(); const today=now.toISOString().slice(0,10);
+  for(let i=5;i>=0;i--){ const m=new Date(now.getFullYear(),now.getMonth()-i,1);
+    const end=i?new Date(m.getFullYear(),m.getMonth()+1,0).toISOString().slice(0,10):today;   // month-end, or today for the current month
+    out.push({label:m.toLocaleDateString('en-US',{month:'short',year:'2-digit'}),mrr:Math.round(cust.reduce((s,c)=>s+mrrAt(c,end),0))}); }
   return out;
 }
 function renderRevProjection(){
@@ -642,7 +675,7 @@ function renderRevProjection(){
       scales:{x:{grid:{color:gridc},ticks:{color:textc,maxTicksLimit:H>12?13:H+1}},y:{grid:{color:gridc},ticks:{color:textc,callback:v=>'$'+(v/1000)+'k'}}}}});
 }
 function renderRevenue(){
-  const h=buildMrrHistory(); drawLine('mrrTrendChart',h.map(x=>x.label),h.map(x=>x.mrr));
+  const h=buildMrrHistory(); drawLine('mrrTrendChart',h.map(x=>x.label),h.map(x=>x.mrr),{stepped:'middle'});
   renderRevProjection();
   // Renewals: signed contracts first (renew date, annualized value), then any customer
   // rows with a renew date whose name isn't already covered by a contract.
@@ -699,10 +732,25 @@ function renderRunway(){
 function renderForecast(){
   const m=metrics(); const horizon=+data.horizon||24; const rg=(+$('revGrowth').value||0)/100, cg=(+$('costGrowth').value||0)/100;
   const tRate=m.treasury>0?m.monthlyInterest/m.treasury:0;   // blended monthly treasury rate (compounds)
-  const labels=[],bal=[]; let op=m.opCash, tre=m.treasury, rev=m.totalRev, cost=m.grossCosts; const now=new Date();
+  const labels=[],bal=[]; let op=m.opCash, tre=m.treasury, cost=m.grossCosts; const now=new Date();
   for(let i=0;i<=horizon;i++){ const d=new Date(now.getFullYear(),now.getMonth()+i,1); labels.push(d.toLocaleDateString('en-US',{month:'short',year:'2-digit'}));
-    bal.push(Math.round(op+tre)); op+=(rev-cost); tre*=(1+tRate); rev*=(1+rg); cost*=(1+cg); }
-  drawLine('forecastChart',labels,bal);
+    bal.push(Math.round(op+tre));
+    const from=new Date(now.getFullYear(),now.getMonth()+i,now.getDate()).toISOString().slice(0,10), to=new Date(now.getFullYear(),now.getMonth()+i+1,now.getDate()).toISOString().slice(0,10);
+    op+=cashIn(from,to)*Math.pow(1+rg,i)-cost; tre*=(1+tRate); cost*=(1+cg); }
+  drawLine('forecastChart',labels,bal,{tension:0});
+}
+// Customer cash expected in [from,to): contracts with a billing schedule pay on it (repeating every N months,
+// assumed to renew) plus any one-off/outstanding invoices in `extra`; everyone else pays their monthly amount each month.
+function cashIn(from,to){
+  let sum=0;
+  (live.customers||data.customers).filter(c=>c.status==='active'&&c.type!=='services').forEach(c=>{
+    const b=(contractFor(c.name)||{}).billing;
+    if(!b){ sum+=+c.mrr||0; return; }
+    for(let k=0;k<120;k++){ const t=new Date(b.next+'T12:00:00'); t.setMonth(t.getMonth()+k*(+b.every||12)); const s=t.toISOString().slice(0,10);
+      if(s>=to) break; if(s>=from) sum+=+b.amount||0; }
+    (b.extra||[]).forEach(e=>{ if(e.date>=from&&e.date<to) sum+=+e.amount||0; });   // one-off / outstanding invoices
+  });
+  return sum;
 }
 
 // ── Spend / burn ──────────────────────────────────────────────────────────
@@ -774,8 +822,8 @@ function renderEfficiency(){
 // ── Charts ──────────────────────────────────────────────────────────────────
 const CH={}; const gridc='#1e1e2e', textc='#888';
 function destroy(id){ if(CH[id]) CH[id].destroy(); }
-function drawLine(id,labels,d){ if(!window.Chart)return; destroy(id);
-  CH[id]=new Chart($(id),{type:'line',data:{labels,datasets:[{data:d,borderColor:'#6366f1',backgroundColor:'rgba(99,102,241,0.1)',fill:true,tension:.3,pointRadius:0}]},
+function drawLine(id,labels,d,opt){ if(!window.Chart)return; destroy(id);
+  CH[id]=new Chart($(id),{type:'line',data:{labels,datasets:[Object.assign({data:d,borderColor:'#6366f1',backgroundColor:'rgba(99,102,241,0.1)',fill:true,tension:.3,pointRadius:0},opt||{})]},
     options:{responsive:true,animation:false,plugins:{legend:{display:false}},scales:{x:{grid:{color:gridc},ticks:{color:textc,maxTicksLimit:12}},y:{grid:{color:gridc},ticks:{color:textc,callback:v=>'$'+(v/1000)+'k'}}}}}); }
 function drawBar(id,labels,d,colors){ if(!window.Chart)return; destroy(id);
   CH[id]=new Chart($(id),{type:'bar',data:{labels,datasets:[{data:d,backgroundColor:colors,borderRadius:6}]},
@@ -785,9 +833,9 @@ function drawDoughnut(id,labels,d,colors){ if(!window.Chart)return; destroy(id);
     options:{responsive:true,animation:false,plugins:{legend:{position:'bottom',labels:{color:textc,padding:12,boxWidth:12,font:{size:11}}}}}}); }
 
 // ── Customer CRUD ────────────────────────────────────────────────────────────
-function addCustomer(){ editIdx=null; $('custModalTitle').textContent='Add customer'; ['cName','cMrr','cSeats','cRenew'].forEach(id=>$(id).value=''); $('cType').value='recurring'; $('cDate').value=new Date().toISOString().split('T')[0]; $('cStatus').value='active'; openModal('custModal'); }
-function editCustomer(i){ const c=data.customers[i]; editIdx=i; $('custModalTitle').textContent='Edit customer'; $('cName').value=c.name; $('cType').value=c.type||'recurring'; $('cMrr').value=c.mrr; $('cSeats').value=c.seats||''; $('cDate').value=c.date||''; $('cRenew').value=c.renew||''; $('cStatus').value=c.status; openModal('custModal'); }
-function saveCustomer(){ const c={name:$('cName').value.trim(),type:$('cType').value,mrr:+$('cMrr').value||0,seats:+$('cSeats').value||0,date:$('cDate').value,renew:$('cRenew').value,status:$('cStatus').value}; if(!c.name)return; if(editIdx!=null) data.customers[editIdx]=c; else data.customers.push(c); save(); closeModal('custModal'); renderAll(); }
+function addCustomer(){ editIdx=null; $('custModalTitle').textContent='Add customer'; ['cName','cMrr','cSeats','cRenew','cEnded'].forEach(id=>$(id).value=''); $('cType').value='recurring'; $('cDate').value=new Date().toISOString().split('T')[0]; $('cStatus').value='active'; openModal('custModal'); }
+function editCustomer(i){ const c=data.customers[i]; editIdx=i; $('custModalTitle').textContent='Edit customer'; $('cName').value=c.name; $('cType').value=c.type||'recurring'; $('cMrr').value=c.mrr; $('cSeats').value=c.seats||''; $('cDate').value=c.date||''; $('cRenew').value=c.renew||''; $('cStatus').value=c.status; $('cEnded').value=c.ended||''; openModal('custModal'); }
+function saveCustomer(){ const c={name:$('cName').value.trim(),type:$('cType').value,mrr:+$('cMrr').value||0,seats:+$('cSeats').value||0,date:$('cDate').value,renew:$('cRenew').value,status:$('cStatus').value}; if($('cEnded').value) c.ended=$('cEnded').value; if(!c.name)return; if(editIdx!=null) data.customers[editIdx]=c; else data.customers.push(c); save(); closeModal('custModal'); renderAll(); }
 function delCustomer(i){ data.customers.splice(i,1); save(); renderAll(); }
 function toggleType(i){ const c=data.customers[i]; c.type=c.type==='services'?'recurring':'services'; save(); renderAll(); }
 function addTeam(){ data.team.push({name:'New hire',role:'',monthly:0}); save(); renderAll(); }
