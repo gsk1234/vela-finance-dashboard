@@ -510,7 +510,7 @@ function seedContracts(){
   if(!data.contractsSeededV15){
     CONTRACTS_SEED.filter(c=>c.quote==='Q-VELA-AST-001').forEach(upsertContract);
     (data.contracts||[]).forEach(c=>{ if(c.quote==='Q-VELA-AST-001'&&!c.billing)
-      c.billing={ next:'2026-12-10', amount:25200, every:12, note:'annual in advance, invoiced 11/10 Net 30' }; });
+      c.billing={ next:'2026-12-10', amount:25000, every:12, note:'annual in advance, invoiced 11/10 Net 30 · first invoice $25,200 less $200 pilot deposit credit (Stripe draft in_1UaKhgIDBSdFlAfFJWlQbAXv)' }; });
     data.customers=data.customers||[];
     if(!data.customers.some(c=>norm(c.name).includes('astreet')))
       data.customers.push({name:'A-Street',type:'recurring',mrr:2100,date:'2026-11-10',renew:'2027-11-09',seats:7,status:'active'});
