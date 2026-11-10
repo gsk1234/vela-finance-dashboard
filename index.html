@@ -390,6 +390,10 @@ const CONTRACTS_SEED = [
     envelope:'BB6520A8-0AED-87C5-816E-A1B93D717F44',
     steps:[ {date:'2026-10-30',arr:6000,label:'1 seat'} ], tcv:6000,
     notes:'1 platform license @ $500/mo flat, no usage metering · 12-mo term from Service Start (assumed 10/30/26 signing date) · $6,000/yr billed 2 × $3,000: installment 1 on execution, installment 2 at start of month 7, Net 7, non-refundable · UK customer: no UK VAT charged, reverse-charge · extra users at then-current per-seat rate, prorated + co-terminous · auto-renews 12-mo at then-current seat count, 30-day non-renewal notice (by 9/29/27) · marketing reference permitted · Executive Search Leaders Limited, signed by Nick Workman (Managing Partner) + Gobhanu 10/30/26' },
+  { name:'A-Street', quote:'Q-VELA-AST-001', signed:'2026-11-10', start:'2026-11-10', end:'2027-11-09', renew:'2027-11-09',
+    envelope:'aa21a687-b060-8378-81a1-f9b03c40dcae',
+    steps:[ {date:'2026-11-10',arr:25200,label:'7 seats @ $300'} ], tcv:25200,
+    notes:'7 seats @ $300/seat/mo flat, no usage metering · 12-mo term from signing 11/10/26–11/9/27 · $25,200 annual subscription invoiced upfront on execution, Net 30, non-refundable, USD · onboarding completed during pilot, founder-led support included · auto-renews 12-mo at then-current seat count, 30-day non-renewal notice (by 10/10/27) · marketing reference + mini case study permitted · earlier 6-or-8-seat envelope 83F88ED8 voided 11/10 · A-Street Management LP, signed by Heather Mercier (Managing Director) + Gobhanu 11/10/26 · billing operations@astreet.com, 119 St. John\'s Place, Brooklyn, NY 11217' },
 ];
 // One-time upsert (by quote id) so the DocuSign seed lands in the shared store exactly once
 // and never resurrects a contract the team has deliberately deleted or edited.
@@ -501,6 +505,16 @@ function seedContracts(){
       if(c.quote==='Q-VELA-OXN-001 + Amd 1'&&(c.steps||[]).length===1&&c.steps[0].date==='2026-06-01')
         c.steps=[{arr:105600,date:'2026-05-13',label:'11 seats'},{arr:153600,date:'2026-09-15',label:'Amd 1: 16 seats'}]; });
     data.contractsSeededV14=true; dirty=true;
+  }
+  // V15: A-Street (Q-VELA-AST-001, signed 11/10/26) — 7 seats @ $300/mo, $25.2k ARR, annual upfront Net 30.
+  if(!data.contractsSeededV15){
+    CONTRACTS_SEED.filter(c=>c.quote==='Q-VELA-AST-001').forEach(upsertContract);
+    (data.contracts||[]).forEach(c=>{ if(c.quote==='Q-VELA-AST-001'&&!c.billing)
+      c.billing={ next:'2026-12-10', amount:25200, every:12, note:'annual in advance, invoiced 11/10 Net 30' }; });
+    data.customers=data.customers||[];
+    if(!data.customers.some(c=>norm(c.name).includes('astreet')))
+      data.customers.push({name:'A-Street',type:'recurring',mrr:2100,date:'2026-11-10',renew:'2027-11-09',seats:7,status:'active'});
+    data.contractsSeededV15=true; dirty=true;
   }
   if(dirty) save();
 }
