@@ -152,6 +152,18 @@
     </table>
   </div>
 </div>
+<div class="grid">
+  <div class="card full">
+    <h2><span id="pipeSummary">Expected — pipeline &amp; expansions</span>
+      <button class="btn btn-sm" onclick="addPipe()">+ Add expected deal</button>
+    </h2>
+    <table>
+      <thead><tr><th>Customer</th><th>Type</th><th class="num">Seats</th><th class="num">$/seat/mo</th><th class="num">$/mo</th><th class="num">ARR</th><th class="num">Likelihood %</th><th>Expected close</th><th class="num">Weighted $/mo</th><th>Notes</th><th></th></tr></thead>
+      <tbody id="pipeTable"></tbody>
+    </table>
+    <div id="pipeRollup" class="tiny" style="margin-top:10px"></div>
+  </div>
+</div>
 <div class="grid g3">
   <div class="card">
     <h2>MRR projection <span class="hint">hover for month-by-month values</span></h2>
@@ -516,6 +528,14 @@ function seedContracts(){
       data.customers.push({name:'A-Street',type:'recurring',mrr:2100,date:'2026-11-10',renew:'2027-11-09',seats:7,status:'active'});
     data.contractsSeededV15=true; dirty=true;
   }
+  // V16: Expected-revenue table (pipeline + expansions), seeded with the asks open as of 11/17/26.
+  if(!data.contractsSeededV16){
+    if(!data.pipeline) data.pipeline=[
+      {name:'The Elliot Group',kind:'expansion',seats:1,rate:750,mrr:750,prob:90,close:'',status:'open',notes:'asked for +1 seat · 3 → 4 @ $750 contracted rate, co-terminous to 8/9/27'},
+      {name:'AIIR Consulting',kind:'expansion',seats:1,rate:400,mrr:400,prob:90,close:'',status:'open',notes:'asked for +1 seat · 1 → 2 @ current $400/mo, month-to-month'},
+      {name:'New customer (rename)',kind:'new',seats:null,rate:null,mrr:1500,prob:50,close:'',status:'open',notes:'asked for ~$1,500/mo price point'} ];
+    data.contractsSeededV16=true; dirty=true;
+  }
   if(dirty) save();
 }
 
@@ -673,15 +693,19 @@ function buildMrrHistory(){
 function renderRevProjection(){
   const m=metrics(); const base=(+$('gBase').value||0)/100, opt=(+$('gOpt').value||0)/100, con=(+$('gCon').value||0)/100;
   const H=+($('projHorizon')?$('projHorizon').value:12)||12;
-  const labels=[],b=[],o=[],c=[]; const now=new Date();
+  const labels=[],b=[],o=[],c=[],w=[]; const now=new Date();
   for(let i=0;i<=H;i++){ const d=new Date(now.getFullYear(),now.getMonth()+i,1); labels.push(i===0?'Now':d.toLocaleDateString('en-US',{month:'short',year:'2-digit'}));
-    b.push(Math.round(m.totalRev*Math.pow(1+base,i))); o.push(Math.round(m.totalRev*Math.pow(1+opt,i))); c.push(Math.round(m.totalRev*Math.pow(1+con,i))); }
+    b.push(Math.round(m.totalRev*Math.pow(1+base,i))); o.push(Math.round(m.totalRev*Math.pow(1+opt,i))); c.push(Math.round(m.totalRev*Math.pow(1+con,i)));
+    // Signed MRR + weighted expected deals from their close month (blank close = next month), no growth applied.
+    const mEnd=new Date(d.getFullYear(),d.getMonth()+1,0).toISOString().slice(0,10);
+    w.push(Math.round(m.totalRev+pipeOpen().reduce((s,p)=>s+((p.close?p.close<=mEnd:i>=1)?pipeMrr(p)*(+p.prob||0)/100:0),0))); }
   if(!window.Chart)return; destroy('revProjChart');
   const money=v=>'$'+Math.round(v).toLocaleString('en-US');
   CH['revProjChart']=new Chart($('revProjChart'),{type:'line',data:{labels,datasets:[
     {label:`Optimistic (${(opt*100).toFixed(0)}%/mo)`,data:o,borderColor:'#22c55e',backgroundColor:'#22c55e',borderDash:[5,5],tension:.3,pointRadius:0,pointHoverRadius:5},
     {label:`Base (${(base*100).toFixed(0)}%/mo)`,data:b,borderColor:'#6366f1',backgroundColor:'#6366f1',tension:.3,pointRadius:0,pointHoverRadius:5},
-    {label:`Conservative (${(con*100).toFixed(0)}%/mo)`,data:c,borderColor:'#f59e0b',backgroundColor:'#f59e0b',borderDash:[5,5],tension:.3,pointRadius:0,pointHoverRadius:5}]},
+    {label:`Conservative (${(con*100).toFixed(0)}%/mo)`,data:c,borderColor:'#f59e0b',backgroundColor:'#f59e0b',borderDash:[5,5],tension:.3,pointRadius:0,pointHoverRadius:5},
+    {label:'Signed + expected (weighted, no growth)',data:w,borderColor:'#e879f9',backgroundColor:'#e879f9',borderDash:[2,3],stepped:true,pointRadius:0,pointHoverRadius:5}]},
     options:{responsive:true,animation:false,interaction:{mode:'index',intersect:false},
       plugins:{legend:{display:true,labels:{color:textc,boxWidth:12,font:{size:10}}},
         tooltip:{enabled:true,backgroundColor:'#161620',borderColor:'#2a2a3e',borderWidth:1,titleColor:'#fff',bodyColor:'#cfcfe0',padding:10,
@@ -933,6 +957,46 @@ function renderPilots(){
 }
 function addPilot(){ data.pilots=data.pilots||[]; data.pilots.push({name:'New pilot',monthly:0,start:new Date().toISOString().slice(0,10),end:'',status:'active',notes:''}); renderPilots(); save(); }
 
+// ── Expected revenue: pipeline + expansions (not signed — excluded from MRR/ARR/runway) ──
+// $/mo = seats × $/seat when both are set, otherwise the typed $/mo. Weighted = $/mo × likelihood.
+const PIPE_STAT=['open','won','lost'];
+function pipeMrr(p){ const n=+p.seats, r=+p.rate; return n>0&&r>0 ? n*r : (+p.mrr||0); }
+function pipeOpen(){ return (data.pipeline||[]).filter(p=>(p.status||'open')==='open'); }
+function pipeTotals(){ const o=pipeOpen();
+  return { count:o.length, mrr:o.reduce((s,p)=>s+pipeMrr(p),0), wmrr:o.reduce((s,p)=>s+pipeMrr(p)*(+p.prob||0)/100,0) }; }
+function renderPipeRollup(){
+  const t=pipeTotals(), m=metrics(), ca=contractedArr();
+  $('pipeSummary').innerHTML=`Expected — pipeline &amp; expansions <span class="tiny">· ${t.count} open · +${fmt(t.mrr)}/mo if all close · ${fmt(t.wmrr)}/mo weighted · not counted in MRR/ARR/runway until signed</span>`;
+  $('pipeRollup').innerHTML=`<b>MRR</b> ${fmt(m.totalRev)} → <b>${fmt(m.totalRev+t.mrr)}</b> if all close (${fmt(m.totalRev+t.wmrr)} weighted) &nbsp;·&nbsp; `
+    +`<b>Contracted ARR</b> ${fmtK(ca.now)} → <b>${fmtK(ca.now+t.mrr*12)}</b> (${fmtK(ca.now+t.wmrr*12)} weighted)`;
+}
+function renderPipeline(){
+  data.pipeline=data.pipeline||[];
+  const set=(i,k,v,full)=>`data.pipeline[${i}].${k}=${v};${full?'renderPipeline()':'renderPipeRow('+i+')'};save()`;
+  $('pipeTable').innerHTML=data.pipeline.length?data.pipeline.map((p,i)=>{ const st=p.status||'open';
+    return `<tr style="${st==='open'?'':'opacity:.45'}">
+      <td><input class="cell" value="${esc(p.name||'')}" oninput="${set(i,'name','this.value')}"></td>
+      <td><select onchange="${set(i,'kind','this.value',1)}">${['expansion','new'].map(k=>`<option ${(p.kind||'new')===k?'selected':''}>${k}</option>`).join('')}</select></td>
+      <td class="num"><input class="cell num" type="number" min="0" value="${p.seats??''}" placeholder="—" oninput="${set(i,'seats','this.value===\'\'?null:+this.value')}"></td>
+      <td class="num"><input class="cell num" type="number" min="0" value="${p.rate??''}" placeholder="—" oninput="${set(i,'rate','this.value===\'\'?null:+this.value')}"></td>
+      <td class="num"><input class="cell num" type="number" min="0" id="pipeMrr${i}" value="${pipeMrr(p)}" ${+p.seats>0&&+p.rate>0?'readonly title="seats × $/seat"':''} oninput="${set(i,'mrr','+this.value')}"></td>
+      <td class="num" id="pipeArr${i}">${fmt(pipeMrr(p)*12)}</td>
+      <td class="num"><input class="cell num" type="number" min="0" max="100" value="${p.prob??50}" oninput="${set(i,'prob','+this.value')}"></td>
+      <td><input class="cell" type="date" value="${esc(p.close||'')}" oninput="${set(i,'close','this.value')}"><br>
+        <select onchange="${set(i,'status','this.value',1)}">${PIPE_STAT.map(x=>`<option ${st===x?'selected':''}>${x}</option>`).join('')}</select></td>
+      <td class="num" id="pipeW${i}">${fmt(pipeMrr(p)*(+p.prob||0)/100)}</td>
+      <td><input class="cell" value="${esc(p.notes||'')}" placeholder="—" oninput="${set(i,'notes','this.value')}"></td>
+      <td class="num"><button class="btn btn-sm btn-danger" onclick="data.pipeline.splice(${i},1);renderPipeline();save()">×</button></td>
+    </tr>`; }).join('')
+    :`<tr><td colspan="11" class="tiny">Nothing expected yet. Add seat expansions or new deals you think will close.</td></tr>`;
+  renderPipeRollup();
+}
+// Update one row's computed cells without re-rendering (keeps the cursor in the input being typed in).
+function renderPipeRow(i){ const p=data.pipeline[i]; if(!p) return; const v=pipeMrr(p), auto=+p.seats>0&&+p.rate>0;
+  const e=$('pipeMrr'+i); if(e&&document.activeElement!==e){ e.value=v; } if(e){ e.readOnly=auto; }
+  $('pipeArr'+i).textContent=fmt(v*12); $('pipeW'+i).textContent=fmt(v*(+p.prob||0)/100); renderPipeRollup(); renderRevProjection(); }
+function addPipe(){ data.pipeline=data.pipeline||[]; data.pipeline.push({name:'New deal',kind:'new',seats:null,rate:null,mrr:0,prob:50,close:'',status:'open',notes:''}); renderPipeline(); save(); }
+
 // ── Contracted ARR table (signed order forms from DocuSign) ─────────────────
 function renderContracts(){
   data.contracts=data.contracts||[];
@@ -1011,7 +1075,7 @@ function exportSpendCSV(){ if(!spend)return; const rows=[['Date','Payee','Catego
   const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'})); a.download='vela-spend-'+spend.month+'.csv'; a.click(); toast('Exported'); }
 
 // ── Master render ────────────────────────────────────────────────────────────
-function renderAll(){ save(); renderMetrics(); renderCashAccounts(); renderRevenue(); renderContracts(); renderPilots(); renderRunway(); renderForecast(); renderBurn(); renderTables(); renderScenario(); renderEfficiency(); }
+function renderAll(){ save(); renderMetrics(); renderCashAccounts(); renderRevenue(); renderContracts(); renderPipeline(); renderPilots(); renderRunway(); renderForecast(); renderBurn(); renderTables(); renderScenario(); renderEfficiency(); }
 // Everything EXCEPT the editable tables — safe to call from oninput while typing.
 function renderDerived(){ save(); renderMetrics(); renderRunway(); renderForecast(); renderBurn(); renderScenario(); renderEfficiency(); }
 
