@@ -71,6 +71,10 @@
   input, select { background:#0a0a0f; border:1px solid #2a2a3e; border-radius:8px; color:#fff; padding:8px 10px; font-size:13px; outline:none; }
   input:focus, select:focus { border-color:var(--indigo); }
   input.cell { width:100%; background:transparent; border:1px solid transparent; padding:5px 7px; }
+  .pipe-kpis { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-bottom:14px; }
+  .pipe-kpis .metric-card { padding:11px 13px; }
+  .pipe-kpis .metric-card .value { font-size:19px; }
+  @media (max-width:900px){ .pipe-kpis { grid-template-columns:repeat(2,1fr); } }
   table.pipe { table-layout:fixed; }
   table.pipe th, table.pipe td { padding-left:4px; padding-right:4px; vertical-align:middle; }
   table.pipe input.cell.num { text-align:right; font-variant-numeric:tabular-nums; -moz-appearance:textfield; }
@@ -165,6 +169,7 @@
     <h2><span id="pipeSummary">Expected — pipeline &amp; expansions</span>
       <button class="btn btn-sm" onclick="addPipe()">+ Add expected deal</button>
     </h2>
+    <div class="pipe-kpis" id="pipeKpis"></div>
     <table class="pipe">
       <colgroup><col style="width:14%"><col style="width:8%"><col style="width:5%"><col style="width:7%"><col style="width:7%"><col style="width:7%"><col style="width:6%"><col style="width:10%"><col style="width:7%"><col style="width:7%"><col><col style="width:40px"></colgroup>
       <thead><tr><th>Customer</th><th>Type</th><th class="num">Seats</th><th class="num">$/seat</th><th class="num">$/mo</th><th class="num">ARR</th><th class="num">Odds %</th><th>Expected close</th><th>Status</th><th class="num">Weighted</th><th>Notes</th><th></th></tr></thead>
@@ -976,6 +981,11 @@ function pipeTotals(){ const o=pipeOpen();
 function renderPipeRollup(){
   const t=pipeTotals(), m=metrics(), ca=contractedArr();
   $('pipeSummary').innerHTML=`Expected — pipeline &amp; expansions <span class="tiny">· ${t.count} open · +${fmt(t.mrr)}/mo if all close · ${fmt(t.wmrr)}/mo weighted · not counted in MRR/ARR/runway until signed</span>`;
+  $('pipeKpis').innerHTML=`
+    <div class="metric-card accent"><div class="label">Pipeline ARR · unweighted</div><div class="value">${fmtK(t.mrr*12)}</div><div class="sub">${fmt(t.mrr)}/mo if all ${t.count} close</div></div>
+    <div class="metric-card accent"><div class="label">Pipeline ARR · weighted</div><div class="value">${fmtK(t.wmrr*12)}</div><div class="sub">${fmt(t.wmrr)}/mo × odds</div></div>
+    <div class="metric-card"><div class="label">Total ARR · unweighted</div><div class="value">${fmtK(ca.now+t.mrr*12)}</div><div class="sub">contracted ${fmtK(ca.now)} + pipeline</div></div>
+    <div class="metric-card"><div class="label">Total ARR · weighted</div><div class="value">${fmtK(ca.now+t.wmrr*12)}</div><div class="sub">contracted ${fmtK(ca.now)} + weighted</div></div>`;
   $('pipeRollup').innerHTML=`<b>MRR</b> ${fmt(m.totalRev)} → <b>${fmt(m.totalRev+t.mrr)}</b> if all close (${fmt(m.totalRev+t.wmrr)} weighted) &nbsp;·&nbsp; `
     +`<b>Contracted ARR</b> ${fmtK(ca.now)} → <b>${fmtK(ca.now+t.mrr*12)}</b> (${fmtK(ca.now+t.wmrr*12)} weighted)`;
 }
