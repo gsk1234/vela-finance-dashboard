@@ -984,10 +984,10 @@ function renderPipeRollup(){
   $('pipeKpis').innerHTML=`
     <div class="metric-card accent"><div class="label">Pipeline ARR · unweighted</div><div class="value">${fmtK(t.mrr*12)}</div><div class="sub">${fmt(t.mrr)}/mo if all ${t.count} close</div></div>
     <div class="metric-card accent"><div class="label">Pipeline ARR · weighted</div><div class="value">${fmtK(t.wmrr*12)}</div><div class="sub">${fmt(t.wmrr)}/mo × odds</div></div>
-    <div class="metric-card"><div class="label">Total ARR · unweighted</div><div class="value">${fmtK(ca.now+t.mrr*12)}</div><div class="sub">contracted ${fmtK(ca.now)} + pipeline</div></div>
-    <div class="metric-card"><div class="label">Total ARR · weighted</div><div class="value">${fmtK(ca.now+t.wmrr*12)}</div><div class="sub">contracted ${fmtK(ca.now)} + weighted</div></div>`;
+    <div class="metric-card"><div class="label">Total ARR · unweighted</div><div class="value">${fmtK(m.arr+t.mrr*12)}</div><div class="sub">ARR ${fmtK(m.arr)} + pipeline</div></div>
+    <div class="metric-card"><div class="label">Total ARR · weighted</div><div class="value">${fmtK(m.arr+t.wmrr*12)}</div><div class="sub">ARR ${fmtK(m.arr)} + weighted</div></div>`;
   $('pipeRollup').innerHTML=`<b>MRR</b> ${fmt(m.totalRev)} → <b>${fmt(m.totalRev+t.mrr)}</b> if all close (${fmt(m.totalRev+t.wmrr)} weighted) &nbsp;·&nbsp; `
-    +`<b>Contracted ARR</b> ${fmtK(ca.now)} → <b>${fmtK(ca.now+t.mrr*12)}</b> (${fmtK(ca.now+t.wmrr*12)} weighted)`;
+    +`<b>ARR</b> ${fmtK(m.arr)} → <b>${fmtK(m.arr+t.mrr*12)}</b> (${fmtK(m.arr+t.wmrr*12)} weighted)`;
 }
 function renderPipeline(){
   data.pipeline=data.pipeline||[];
