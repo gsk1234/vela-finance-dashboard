@@ -176,6 +176,7 @@
       <tbody id="pipeTable"></tbody>
     </table>
     <div id="pipeRollup" class="tiny" style="margin-top:10px"></div>
+    <div id="pipeWon" style="margin-top:12px"></div>
   </div>
 </div>
 <div class="grid g3">
@@ -992,6 +993,7 @@ function renderPipeRollup(){
 }
 function renderPipeline(){
   data.pipeline=data.pipeline||[];
+  if(data.pipeline.some(p=>p.status==='won')){ for(let i=data.pipeline.length-1;i>=0;i--) if(data.pipeline[i].status==='won') applyWon(i); renderAll(); return; }
   const set=(i,k,v,full)=>`data.pipeline[${i}].${k}=${v};${full?'renderPipeline()':'renderPipeRow('+i+')'};save()`;
   $('pipeTable').innerHTML=data.pipeline.length?data.pipeline.map((p,i)=>{ const st=p.status||'open';
     return `<tr style="${st==='open'?'':'opacity:.45'}">
@@ -1003,13 +1005,52 @@ function renderPipeline(){
       <td class="calc" id="pipeArr${i}">${fmt(pipeMrr(p)*12)}</td>
       <td class="num"><input class="cell num" type="number" min="0" max="100" value="${p.prob??50}" oninput="${set(i,'prob','+this.value')}"></td>
       <td><input type="date" value="${esc(p.close||'')}" title="blank = assumed next month" oninput="${set(i,'close','this.value')}"></td>
-      <td><select onchange="${set(i,'status','this.value',1)}">${PIPE_STAT.map(x=>`<option ${st===x?'selected':''}>${x}</option>`).join('')}</select></td>
+      <td><select onchange="setPipeStatus(${i},this.value)">${PIPE_STAT.map(x=>`<option ${st===x?'selected':''}>${x}</option>`).join('')}</select></td>
       <td class="calc" id="pipeW${i}">${fmt(pipeMrr(p)*(+p.prob||0)/100)}</td>
       <td><input class="cell" value="${esc(p.notes||'')}" title="${esc(p.notes||'')}" placeholder="—" oninput="this.title=this.value;${set(i,'notes','this.value')}"></td>
       <td class="num"><button class="btn btn-sm btn-danger" onclick="data.pipeline.splice(${i},1);renderPipeline();save()">×</button></td>
     </tr>`; }).join('')
     :`<tr><td colspan="12" class="tiny">Nothing expected yet. Add seat expansions or new deals you think will close.</td></tr>`;
   renderPipeRollup();
+  const won=(data.pipelineWon||[]);
+  $('pipeWon').innerHTML=won.length?`<div class="tiny" style="margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px">Won — moved into Customers &amp; ARR</div>`
+    +won.slice().reverse().map((w,j)=>{ const i=won.length-1-j;
+      return `<div class="tiny" style="display:flex;gap:10px;align-items:center;padding:4px 0;border-top:1px solid var(--border)">
+        <span style="color:var(--green)">✓</span><b style="color:#fff">${esc(w.name)}</b><span>+${fmt(pipeMrr(w))}/mo · +${fmtK(pipeMrr(w)*12)} ARR</span>
+        <span>won ${esc(w.wonAt||'')}</span><span style="flex:1">${esc(w.applied||'')}</span>
+        <button class="btn-ghost btn-sm" onclick="undoWon(${i})">Undo</button></div>`; }).join(''):'';
+}
+// Status change: "won" pushes the deal into the live books (see applyWon); anything else just records it.
+function setPipeStatus(i,v){ data.pipeline[i].status=v; if(v==='won'){ applyWon(i); toast(data.pipelineWon[data.pipelineWon.length-1].name+' won — added to Customers'); renderAll(); } else { renderPipeline(); save(); } }
+// Won → (1) customer row: expansion adds $/mo + seats to the existing row, a new logo gets a new active row;
+// (2) signed contract (if one matches): adds a dated ARR step + prorated TCV through the contract end;
+// (3) moves the deal out of the pipeline into data.pipelineWon with a snapshot so Undo restores everything.
+function applyWon(i){
+  const p=data.pipeline[i]; if(!p) return; const v=pipeMrr(p), n=+p.seats||0, today=new Date().toISOString().slice(0,10);
+  data.customers=data.customers||[];
+  const ci=data.customers.findIndex(c=>{ const a=norm(c.name), b=norm(p.name); return a&&b&&(a.includes(b)||b.includes(a))&&c.status!=='churned'; });
+  const k=contractFor(p.name); const ki=k?data.contracts.indexOf(k):-1;
+  const snap={ custIdx:ci, cust:ci>=0?JSON.parse(JSON.stringify(data.customers[ci])):null, contractIdx:ki, contract:k?JSON.parse(JSON.stringify(k)):null };
+  const did=[];
+  if(ci>=0){ const c=data.customers[ci]; c.mrr=(+c.mrr||0)+v; if(n) c.seats=(+c.seats||0)+n; if(c.status!=='active') c.status='active';
+    did.push(`${c.name}: ${fmt(snap.cust.mrr)} → ${fmt(c.mrr)}/mo${n?`, ${snap.cust.seats||0} → ${c.seats} seats`:''}`); }
+  else { data.customers.push({name:p.name.trim(),type:'recurring',mrr:v,seats:n||0,date:today,renew:'',status:'active'}); snap.newCust=true;
+    did.push(`new customer row ${fmt(v)}/mo`); }
+  if(k){ const before=contractArrAt(k,today), after=before+v*12; k.steps=(k.steps||[]).concat([{date:today,arr:after,label:`+${n?n+' seat'+(n>1?'s':''):fmt(v)+'/mo'} (pipeline, won ${today})`}]);
+    const end=k.end||k.renew; const mo=end?Math.max(0,Math.round((new Date(end)-new Date(today))/864e5/30.44)):12;
+    k.tcv=Math.round((+k.tcv||before)+v*mo); k.notes=(k.notes?k.notes+' · ':'')+`+${fmt(v)}/mo won ${today} via pipeline (co-terminous, +${fmt(v*mo)} TCV)`;
+    did.push(`contract ARR ${fmtK(before)} → ${fmtK(after)}`); }
+  data.pipelineWon=data.pipelineWon||[];
+  data.pipelineWon.push(Object.assign({},p,{status:'won',wonAt:today,applied:did.join(' · '),snap}));
+  data.pipeline.splice(i,1); save();
+}
+function undoWon(i){
+  const w=(data.pipelineWon||[])[i]; if(!w) return; const s=w.snap||{};
+  if(s.newCust){ const j=data.customers.findIndex(c=>norm(c.name)===norm(w.name)); if(j>=0) data.customers.splice(j,1); }
+  else if(s.cust&&s.custIdx>=0){ const j=data.customers.findIndex(c=>norm(c.name)===norm(s.cust.name)); if(j>=0) data.customers[j]=s.cust; }
+  if(s.contract){ const j=data.contracts.findIndex(c=>c.quote===s.contract.quote); if(j>=0) data.contracts[j]=s.contract; }
+  const back=Object.assign({},w,{status:'open'}); delete back.snap; delete back.applied; delete back.wonAt;
+  data.pipeline.push(back); data.pipelineWon.splice(i,1); save(); toast(w.name+' moved back to pipeline'); renderAll();
 }
 // Update one row's computed cells without re-rendering (keeps the cursor in the input being typed in).
 function renderPipeRow(i){ const p=data.pipeline[i]; if(!p) return; const v=pipeMrr(p), auto=+p.seats>0&&+p.rate>0;
