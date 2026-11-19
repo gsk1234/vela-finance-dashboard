@@ -409,7 +409,7 @@ const CONTRACTS_SEED = [
     envelope:'19C79296-BAC3-8FCB-8138-98685F6307A8',
     steps:[ {date:'2026-09-25',arr:207000,label:'23 seats @ $750'}, {date:'2026-10-05',arr:225000,label:'+2 seats → 25 @ $750'}, {date:'2026-10-20',arr:234000,label:'+1 seat (Kelsey) → 26 @ $750'}, {date:'2026-11-03',arr:252000,label:'+2 seats (Rob, Nick) → 28 @ $750'} ], tcv:189750,
     notes:'28 seats as of 11/3/26 (+2 per Jared email 11/3: Rob (AP) now, Nick joining ~11/17, co-terminous) · 26 seats as of 10/20/26 (Kelsey added per Jared 10/20; 26 active accounts confirmed to Jared 10/23) · 25 seats as of 10/5/26 (+2 added, co-terminous) · 23 seats (partners + APs) @ $750/seat/mo contracted (ARR = 23 × $750 × 12) · intro $500/seat/mo months 1-3, $750 from month 4 once the 6 Success Milestones are accepted (30-day acceptance window; $500 continues until accepted) · quarterly in advance, Net 30: Q1 $34,500 due on signing, Q2-Q4 $51,750 each at $750 rate ($34,500 if milestones still in progress → TCV floor $138k) · $5k onboarding + 20% support plan waived (Strategic Partner) · NO auto-renew: Vela must reach out ≥60 days before end (by 7/26/27); renewal rate capped at $787.50/seat · added seats at then-current rate, co-terminous · Jared Cohen (COO) signed 9/25/26, billing ops@nusearch.com' },
-  { name:'The Talent Studios', quote:'Q-VELA-TTS-001', signed:'2026-09-30', start:'2026-09-30', end:'2027-09-29', renew:'2027-09-29', optout:'2026-12-29',
+  { name:'The Talent Studios', quote:'Q-VELA-TTS-001', signed:'2026-09-30', start:'2026-09-30', end:'2027-09-29', renew:'2027-09-29',
     envelope:'d277bf8d-95b2-8544-83c7-6b4a70e6bafd',
     steps:[ {date:'2026-09-30',arr:22800,label:'2 seats @ $950'} ], tcv:22800,
     notes:'2 seats @ $950/seat/mo (ARR = 2 × $950 × 12, per Gobhanu 10/1/26) · 12-mo term 9/30/26–9/29/27, quarterly in advance, Net 30 · Q1 review / opt-out at end of Q1 (12/29/26): expand to 4 seats, stay <4 seats at a higher rate, or exit · onboarding + support plan waived · $250 pilot credit applied to Q1 · ⚠ Stripe Q1 invoice VVD8S9EG-0001 ($4,850, open) and HubSpot deal were booked at $850/seat — reconcile against the signed order form · Kelli Vukelic (COO) signed 9/30/26, billing ap@talentstudios.com' },
@@ -477,7 +477,7 @@ function seedContracts(){
     CONTRACTS_SEED.filter(c=>c.quote==='Q-VELA-TTS-001').forEach(upsertContract);
     data.customers=data.customers||[];
     if(!data.customers.some(c=>norm(c.name).includes('talentstudios')))
-      data.customers.push({name:'The Talent Studios',type:'recurring',mrr:1900,date:'2026-09-30',renew:'Opt-out by 2026-12-29 · renews 2027-09-29',status:'active'});
+      data.customers.push({name:'The Talent Studios',type:'recurring',mrr:1900,date:'2026-09-30',renew:'2027-09-29',status:'active'});
     data.contractsSeededV8=true; dirty=true;
   }
   // V9: seats purchased per customer (from signed order forms; single-user plans = 1 seat).
@@ -520,7 +520,7 @@ function seedContracts(){
         extra:[{date:'2026-11-20',amount:9333,note:'open Stripe invoice: Amd 1 proration 10/1–12/1'}] },
       'Q-VELA-NUA-001':     { next:'2027-01-24', amount:63000,  every:3, note:'Q2 invoiced 12/25 Net 30 · 28 × $750 × 3 assumes milestones accepted ($42k at $500)',
         extra:[{date:'2026-11-20',amount:34500,note:'Q1 invoice open since 9/28 (overdue)'},{date:'2026-12-20',amount:4054,note:'draft: added-seat proration 11/17–12/23'}] },
-      'Q-VELA-TTS-001':     { next:'2027-01-29', amount:5100,   every:3, note:'Q2 invoiced 12/30 Net 30 · billed at $850/seat (Stripe), opt-out 12/29',
+      'Q-VELA-TTS-001':     { next:'2027-01-29', amount:5100,   every:3, note:'Q2 invoiced 12/30 Net 30 · billed at $850/seat (Stripe)',
         extra:[{date:'2026-11-20',amount:4850,note:'Q1 invoice open since 10/1 (overdue)'}] },
       'Q-VELA-TLG-002':     { next:'2027-03-28', amount:9691,   every:6, note:'€8,400 invoiced 3/21 Net 7 @ 1.1537' },
       'Q-VELA-ESL-001':     { next:'2027-05-07', amount:3000,   every:6, note:'installment 2 at month 7, Net 7',
