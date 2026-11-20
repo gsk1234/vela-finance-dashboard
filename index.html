@@ -57,7 +57,7 @@
   th.sortable:hover { color:#fff; }
   th.sortable .arr { opacity:.45; font-size:10px; margin-left:4px; }
   th.sortable.on { color:#fff; } th.sortable.on .arr { opacity:1; color:#a5b4fc; }
-  td.soon { color:#fbbf24; } td .dim { color:#6b6b80; font-size:10.5px; }
+  td.soon, .tiny.soon { color:#fbbf24; } td .dim { color:#6b6b80; font-size:10.5px; }
   .tag { display:inline-block; padding:2px 9px; border-radius:20px; font-size:11px; font-weight:500; }
   .tag.active { background:rgba(34,197,94,0.15); color:var(--green); }
   .tag.churned { background:rgba(239,68,68,0.15); color:var(--red); }
@@ -201,14 +201,15 @@
 </div>
 
 <!-- ── PILOTS (tracking only) ───────────────────────────────────────────── -->
-<div class="section-title">Pilots <span style="text-transform:none;letter-spacing:0;color:#5a5a70">— tracking only, doesn't affect burn/runway</span></div>
+<div class="section-title">Pilots <span style="text-transform:none;letter-spacing:0;color:#5a5a70">— tracking only, doesn't affect burn/runway · midpoint &amp; end dates auto-added to Gobhanu's Google Calendar</span></div>
 <div class="grid">
   <div class="card full">
     <h2><span id="pilotSummary">Active pilots</span>
       <button class="btn btn-sm" onclick="addPilot()">+ Add pilot</button>
     </h2>
-    <table>
-      <thead><tr><th>Pilot / Company</th><th class="num">Fee</th><th>Start</th><th>End</th><th>Status</th><th>Notes</th><th></th></tr></thead>
+    <table class="pipe">
+      <colgroup><col style="width:15%"><col style="width:7%"><col style="width:11%"><col style="width:11%"><col style="width:11%"><col style="width:9%"><col style="width:8%"><col><col style="width:40px"></colgroup>
+      <thead><tr><th>Pilot / Company</th><th class="num">Fee</th><th>Start</th><th>Midpoint</th><th>Ends</th><th>Status</th><th>Calendar</th><th>Notes</th><th></th></tr></thead>
       <tbody id="pilotTable"></tbody>
     </table>
   </div>
@@ -952,25 +953,49 @@ function exportJSON(){ const blob=new Blob([JSON.stringify(data,null,2)],{type:'
 function renderPilotSummary(){
   const live_=(data.pilots||[]).filter(p=>['active','upcoming'].includes(p.status||'active'));
   const fees=live_.reduce((s,p)=>s+(+p.monthly||0),0);
-  $('pilotSummary').innerHTML=`Pilots <span class="tiny">· ${data.pilots.filter(p=>(p.status||'')==='active').length} active · ${data.pilots.filter(p=>p.status==='upcoming').length} upcoming · ${fmtK(fees)} in pilot fees (active+upcoming)</span>`;
+  const today=new Date().toISOString().slice(0,10); const ms=[];
+  live_.forEach(p=>{ const m=pilotMid(p); if(m&&m>=today) ms.push({d:m,t:p.name+' midpoint'}); if(p.end&&p.end>=today) ms.push({d:p.end,t:p.name+' ends'}); });
+  ms.sort((a,b)=>a.d.localeCompare(b.d)); const nx=ms[0];
+  $('pilotSummary').innerHTML=`Pilots <span class="tiny">· ${data.pilots.filter(p=>(p.status||'')==='active').length} active · ${data.pilots.filter(p=>p.status==='upcoming').length} upcoming · ${fmtK(fees)} in pilot fees (active+upcoming)${nx?` · next: <b style="color:#fff">${esc(nx.t)}</b> ${nx.d===today?'today':'in '+daysOut(nx.d)+'d'} (${nx.d})`:''}</span>`;
 }
+// Pilot dates: midpoint defaults to halfway between start and end unless typed (midSet=true).
+function addDays(d,n){ const t=new Date(d+'T12:00:00'); t.setDate(t.getDate()+n); return t.toISOString().slice(0,10); }
+function pilotMid(p){ if(p.midSet&&p.mid) return p.mid; if(!p.start||!p.end) return '';
+  const n=Math.round((new Date(p.end+'T12:00:00')-new Date(p.start+'T12:00:00'))/864e5); return addDays(p.start,Math.floor((n+1)/2)); }
+function setPilot(i,k,v){ const p=data.pilots[i]; p[k]=v;
+  if(k==='start'&&v&&p.end&&p.end<v) p.end=addDays(v,14);
+  if(k==='mid') p.midSet=!!v;
+  if(['start','mid','end','status','name'].includes(k)) p.calDirty=true;   // calendar sync job picks this up
+  renderPilots(); save(); }
+function pilotDateCell(i,k,v,auto){ const n=v?daysOut(v):null;
+  return `<input type="date" value="${esc(v||'')}" onchange="setPilot(${i},'${k}',this.value)">`
+    +(v?`<div class="tiny${n!=null&&n>=0&&n<=7?' soon':''}" style="padding-left:6px">${n<0?Math.abs(n)+'d ago':n===0?'today':'in '+n+'d'}${auto?' · auto':''}</div>`:''); }
+function pilotCal(p){ const live=['active','upcoming'].includes(p.status||'active');
+  if(!live) return '<span class="tiny">—</span>';
+  if(p.calDirty||!(p.calMid||p.calEnd)) return '<span class="tiny" style="color:var(--amber)" title="Calendar sync job adds/updates the holds within the hour">⏳ syncing</span>';
+  return '<span class="tiny" style="color:var(--green)" title="All-day holds on your Google Calendar">✓ on calendar</span>'; }
 function renderPilots(){
   data.pilots=data.pilots||[];
   renderPilotSummary();
   const STAT=['upcoming','active','converted','ended'];
-  $('pilotTable').innerHTML=data.pilots.length?data.pilots.map((p,i)=>`
-    <tr>
-      <td><input class="cell" value="${esc(p.name||'')}" oninput="data.pilots[${i}].name=this.value;save()"></td>
+  const ord=data.pilots.map((_,i)=>i).sort((a,b)=>{ const r=x=>['active','upcoming'].includes(data.pilots[x].status||'active')?0:1;
+    return r(a)-r(b) || String(r(a)?data.pilots[b].end||'':data.pilots[a].end||'').localeCompare(String(r(a)?data.pilots[a].end||'':data.pilots[b].end||'')); });
+  $('pilotTable').innerHTML=data.pilots.length?ord.map(i=>{ const p=data.pilots[i], st=p.status||'active', live=['active','upcoming'].includes(st);
+    return `<tr style="${live?'':'opacity:.5'}">
+      <td><input class="cell" value="${esc(p.name||'')}" onchange="setPilot(${i},'name',this.value)">${p.envelope?`<div class="tiny" style="padding-left:7px"><a href="https://app.docusign.com/documents/details/${esc(p.envelope)}" target="_blank" style="color:#a5b4fc">DocuSign ↗</a>${p.signed?' · signed '+esc(p.signed):''}</div>`:''}</td>
       <td class="num"><input class="cell num" type="number" value="${p.monthly||0}" oninput="data.pilots[${i}].monthly=+this.value;renderPilotSummary();save()"></td>
-      <td><input class="cell" type="date" value="${esc(p.start||'')}" oninput="data.pilots[${i}].start=this.value;save()"></td>
-      <td><input class="cell" type="date" value="${esc(p.end||'')}" oninput="data.pilots[${i}].end=this.value;save()"></td>
-      <td><select onchange="data.pilots[${i}].status=this.value;renderPilots();save()">${STAT.map(s=>`<option ${(p.status||'active')===s?'selected':''}>${s}</option>`).join('')}</select></td>
-      <td><input class="cell" value="${esc(p.notes||'')}" placeholder="—" oninput="data.pilots[${i}].notes=this.value;save()"></td>
-      <td class="num"><button class="btn btn-sm btn-danger" onclick="data.pilots.splice(${i},1);renderPilots();save()">×</button></td>
-    </tr>`).join('')
-    :`<tr><td colspan="7" class="tiny">No pilots yet. Add one to track who's piloting, what they're paying, and the dates.</td></tr>`;
+      <td>${pilotDateCell(i,'start',p.start)}</td>
+      <td>${pilotDateCell(i,'mid',pilotMid(p),!p.midSet)}</td>
+      <td>${pilotDateCell(i,'end',p.end)}</td>
+      <td><select onchange="setPilot(${i},'status',this.value)">${STAT.map(s=>`<option ${st===s?'selected':''}>${s}</option>`).join('')}</select></td>
+      <td>${pilotCal(p)}</td>
+      <td><input class="cell" value="${esc(p.notes||'')}" title="${esc(p.notes||'')}" placeholder="—" oninput="this.title=this.value;data.pilots[${i}].notes=this.value;save()"></td>
+      <td class="num"><button class="btn btn-sm btn-danger" onclick="if(confirm('Delete pilot ${esc(p.name||'')}? Its calendar holds are removed on the next sync.')){(data.pilotsDeleted=data.pilotsDeleted||[]).push({calMid:data.pilots[${i}].calMid,calEnd:data.pilots[${i}].calEnd});data.pilots.splice(${i},1);renderPilots();save()}">×</button></td>
+    </tr>`; }).join('')
+    :`<tr><td colspan="9" class="tiny">No pilots yet. Add one to track who's piloting, what they're paying, and the dates.</td></tr>`;
 }
-function addPilot(){ data.pilots=data.pilots||[]; data.pilots.push({name:'New pilot',monthly:0,start:new Date().toISOString().slice(0,10),end:'',status:'active',notes:''}); renderPilots(); save(); }
+function addPilot(){ data.pilots=data.pilots||[]; const t=new Date().toISOString().slice(0,10);
+  data.pilots.push({name:'New pilot',monthly:0,start:t,end:addDays(t,14),status:'active',notes:'',calDirty:true}); renderPilots(); save(); }
 
 // ── Expected revenue: pipeline + expansions (not signed — excluded from MRR/ARR/runway) ──
 // $/mo = seats × $/seat when both are set, otherwise the typed $/mo. Weighted = $/mo × likelihood.
